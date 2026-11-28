@@ -381,6 +381,25 @@ def apply(db, name, snapshot_path=None, root=None):
             db.execute(f'PRAGMA user_version={step}')
     return {'database': name, 'from': version, 'to': target, 'applied': steps}
 
+def _verify_snapshot(path):
+    """Confirm a pre-migration copy opens cleanly and record its digest.
+
+    The copy is only useful if it is readable and internally consistent, so it
+    is opened read-only and checked before the report claims a snapshot exists.
+    """
+    import hashlib
+    digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    try:
+        conn = db_connect(str(path), timeout=30)
+        try:
+            ok = conn.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+        finally:
+            conn.close()
+    except Exception:
+        ok = False
+    return {'snapshot_verified': ok, 'snapshot_sha256': digest}
+
+
 def report(root, dry_run=False, snapshot_=True):
     """Inspect (and unless dry_run, migrate) every database under `root`.
 
@@ -405,7 +424,12 @@ def report(root, dry_run=False, snapshot_=True):
             backup = path.with_name(f'{path.stem}.v{version}.backup.sqlite3') if snapshot_ else None
             outcome = apply(conn, name, snapshot_path=backup, root=root)
             outcome['present'] = True
-            outcome['snapshot'] = str(backup) if backup is not None and backup.exists() else None
+            if backup is not None and backup.exists():
+                outcome['snapshot'] = str(backup)
+                outcome.update(_verify_snapshot(backup))
+            else:
+                outcome['snapshot'] = None
+                outcome['snapshot_verified'] = False
             result[name] = outcome
         except MigrationError as exc:
             result[name] = {'present': True, 'error': str(exc)}

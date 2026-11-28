@@ -315,3 +315,31 @@ class MigrationTests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+class SnapshotVerificationTests(unittest.TestCase):
+    def test_pre_migration_snapshot_is_verified_and_hashed(self):
+        import hashlib, sqlite3, tempfile
+        from pathlib import Path
+        from hb_engine.migrations import report
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            conn = sqlite3.connect(root / 'archive.sqlite3')
+            conn.execute('PRAGMA user_version=1')
+            conn.execute('CREATE TABLE messages(hash TEXT PRIMARY KEY, subject TEXT, '
+                         'sender TEXT, date TEXT, message_id TEXT, reply_to TEXT, body TEXT)')
+            conn.execute("INSERT INTO messages VALUES('h1','s','f','d','m','','b')")
+            conn.commit()
+            conn.close()
+            outcome = report(root)['archive']
+            snapshot = Path(outcome['snapshot'])
+            self.assertTrue(snapshot.is_file())
+            self.assertTrue(outcome['snapshot_verified'])
+            self.assertEqual(outcome['snapshot_sha256'],
+                             hashlib.sha256(snapshot.read_bytes()).hexdigest())
+            kept = sqlite3.connect(snapshot)
+            try:
+                self.assertEqual(kept.execute('PRAGMA user_version').fetchone()[0], 1)
+                self.assertEqual(kept.execute('SELECT count(*) FROM messages').fetchone()[0], 1)
+            finally:
+                kept.close()
