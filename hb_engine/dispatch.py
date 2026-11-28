@@ -759,6 +759,12 @@ class Archive:
         return count
     def attachments(self,h):
         return self.db.execute('SELECT filename,mime,length(content) FROM attachment_index WHERE hash=? ORDER BY part',(h,)).fetchall()
+    def entities_build(self, progress=None, cancel_event=None):
+        """Populate the entity registry from stored records."""
+        from . import entities as entity_module
+        return entity_module.build(self.db,progress=progress,
+                                   cancel_event=cancel_event)
+
     def health(self):
         from .sync_lock import sync_lock
         with sync_lock(self.root):
@@ -1171,7 +1177,7 @@ def capabilities():
 def main(argv=None):
     import atexit, getpass, sys
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); q.add_argument('--all-folders',action='store_true'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); fb.add_parser('verify'); fb.add_parser('reindex'); q=sub.add_parser('documents'); dc=q.add_subparsers(dest='dcmd',required=True); dp=dc.add_parser('preview'); dp.add_argument('paths',nargs='+'); di=dc.add_parser('import'); di.add_argument('paths',nargs='+'); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook,document'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('capabilities'); sub.add_parser('imap-presets'); q=sub.add_parser('oauth-login'); q.add_argument('provider'); q.add_argument('user'); q.add_argument('--client-id',required=True); q=sub.add_parser('mbox'); mc=q.add_subparsers(dest='mcmd',required=True); mp=mc.add_parser('preview'); mp.add_argument('path'); mi=mc.add_parser('import'); mi.add_argument('path'); me=mc.add_parser('export'); me.add_argument('destination'); me.add_argument('--hash',action='append',default=[]); me.add_argument('--account'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); q.add_argument('--all-folders',action='store_true'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); fb.add_parser('verify'); fb.add_parser('reindex'); q=sub.add_parser('documents'); dc=q.add_subparsers(dest='dcmd',required=True); dp=dc.add_parser('preview'); dp.add_argument('paths',nargs='+'); di=dc.add_parser('import'); di.add_argument('paths',nargs='+'); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook,document'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('capabilities'); sub.add_parser('imap-presets'); q=sub.add_parser('entities'); ec=q.add_subparsers(dest='ecmd',required=True); ec.add_parser('build'); el=ec.add_parser('list'); el.add_argument('--limit',type=int,default=50); ea=ec.add_parser('aliases'); ea.add_argument('entity_id',type=int); em=ec.add_parser('merge'); em.add_argument('keep',type=int); em.add_argument('merge',type=int); ev=ec.add_parser('verify'); ev.add_argument('alias_id',type=int); es=ec.add_parser('split'); es.add_argument('alias_id',type=int); es.add_argument('name'); et=ec.add_parser('timeline'); et.add_argument('entity_id',type=int); et.add_argument('--limit',type=int,default=50); q=sub.add_parser('oauth-login'); q.add_argument('provider'); q.add_argument('user'); q.add_argument('--client-id',required=True); q=sub.add_parser('mbox'); mc=q.add_subparsers(dest='mcmd',required=True); mp=mc.add_parser('preview'); mp.add_argument('path'); mi=mc.add_parser('import'); mi.add_argument('path'); me=mc.add_parser('export'); me.add_argument('destination'); me.add_argument('--hash',action='append',default=[]); me.add_argument('--account'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
     sub.add_parser('init-encrypted'); sub.add_parser('encryption-status')
     q=sub.add_parser('migrate-encrypted'); q.add_argument('--destination',required=True); q.add_argument('--backup',required=True)
     a=p.parse_args(argv)
@@ -1297,6 +1303,26 @@ def main(argv=None):
             print(f'mbox: {exc}',file=sys.stderr); return 1
         print(json.dumps(result,indent=2))
         return 0 if not result['failed'] else 1
+    elif a.cmd=='entities':
+        from . import entities as entity_module
+        from .dispatch import Archive as _Archive  # noqa: F401  (self)
+        try:
+            if a.ecmd=='build':
+                print(json.dumps(ar.entities_build(),indent=2)); return 0
+            if a.ecmd=='list':
+                print(json.dumps(entity_module.list_entities(ar.db,a.limit),indent=2)); return 0
+            if a.ecmd=='aliases':
+                print(json.dumps(entity_module.aliases(ar.db,a.entity_id),indent=2)); return 0
+            if a.ecmd=='merge':
+                print(json.dumps(entity_module.merge(ar.db,a.keep,a.merge),indent=2)); return 0
+            if a.ecmd=='verify':
+                entity_module.verify_alias(ar.db,a.alias_id); print('verified',a.alias_id); return 0
+            if a.ecmd=='split':
+                print(entity_module.split_alias(ar.db,a.alias_id,a.name)); return 0
+            if a.ecmd=='timeline':
+                print(json.dumps(entity_module.timeline(ar.db,a.entity_id,a.limit),indent=2)); return 0
+        except ValueError as exc:
+            print(f'entities: {exc}',file=sys.stderr); return 1
     elif a.cmd=='capabilities':
         print(json.dumps(capabilities(),indent=2)); return 0
     elif a.cmd=='health':

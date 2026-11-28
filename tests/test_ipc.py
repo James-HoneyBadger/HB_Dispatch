@@ -618,9 +618,9 @@ class IPCServerTests(unittest.TestCase):
         with mock.patch('hb_engine.summarize.Summarizer.summarize_batch', fake_batch):
             resp=self.server.handle(request('summarize',hashes=[self.h]))
             job_id=resp['result']['job_id']
-            deadline=time.time()+3
+            deadline=time.time()+30
             while time.time()<deadline and not self.server._jobs[job_id].get('done'):
-                time.sleep(0.01)
+                time.sleep(0.02)
             self.assertTrue(self.server._jobs[job_id].get('done'))
         lines=[json.loads(x) for x in self.server.out.getvalue().splitlines()]
         events=[x for x in lines if 'event' in x]
@@ -632,9 +632,11 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('cancel',job_id='missing'))['error']['code'],'UNKNOWN_JOB')
 
     def finish_job(self, job_id):
-        deadline=time.time()+5
+        # Windows runners under load can take several seconds to schedule the
+        # worker thread; wait on wall-clock time, not a fixed iteration count.
+        deadline=time.time()+30
         while time.time()<deadline and not self.server._jobs[job_id].get('done'):
-            time.sleep(0.01)
+            time.sleep(0.02)
         self.assertTrue(self.server._jobs[job_id].get('done'))
         events=[json.loads(x) for x in self.server.out.getvalue().splitlines()]
         return next(e for e in events

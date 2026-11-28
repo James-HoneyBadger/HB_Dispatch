@@ -311,6 +311,42 @@ def _encryption_lock(root):
     return lock(root)
 
 
+def _entities(root, params):
+    """Read-only entity queries plus explicit merge, verify and split actions."""
+    from . import entities as entity_module
+    action = params.get('action', 'list')
+    conn = db_connect(str(Path(root).expanduser() / 'archive.sqlite3'), timeout=30)
+    try:
+        if action == 'list':
+            return {'entities': entity_module.list_entities(conn, int(params.get('limit', 50)))}
+        if action == 'aliases':
+            return {'aliases': entity_module.aliases(conn, int(params.get('entity_id', 0)))}
+        if action == 'timeline':
+            return {'timeline': entity_module.timeline(conn, int(params.get('entity_id', 0)),
+                                                       int(params.get('limit', 50)))}
+        if action == 'correspondents':
+            return {'correspondents': entity_module.top_correspondents(
+                conn, int(params.get('entity_id', 0)), int(params.get('limit', 10)))}
+        if action == 'activity':
+            return {'activity': entity_module.activity_by_year(
+                conn, int(params.get('entity_id', 0)))}
+        if action == 'merge':
+            return entity_module.merge(conn, int(params['keep']), int(params['merge']))
+        if action == 'verify':
+            entity_module.verify_alias(conn, int(params['alias_id']))
+            return {'verified': int(params['alias_id'])}
+        if action == 'split':
+            name = params.get('name')
+            if not isinstance(name, str) or not name.strip():
+                raise IPCError('INVALID_PARAMS', 'split requires a name')
+            return {'entity_id': entity_module.split_alias(conn, int(params['alias_id']), name)}
+        raise IPCError('INVALID_PARAMS', f'unknown entity action: {action}')
+    except (KeyError, TypeError, ValueError) as exc:
+        raise IPCError('INVALID_PARAMS', str(exc)) from None
+    finally:
+        conn.close()
+
+
 def _acknowledge_boundary_notice(root):
     """Record that the user accepted the encryption boundary notice.
 
@@ -1810,6 +1846,8 @@ class IPCServer:
                 return _result(request_id, _archive_status(self.root))
             if method == 'acknowledge_boundary_notice':
                 return _result(request_id, _acknowledge_boundary_notice(self.root))
+            if method == 'entities':
+                return _result(request_id, _entities(self.root, params))
             if method == 'create_archive':
                 path = params.get('path')
                 if not isinstance(path, str) or not path.strip():
