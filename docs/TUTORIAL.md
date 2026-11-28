@@ -1,5 +1,7 @@
 # HB Continuum: Take ownership of your email history
 
+For practical examples beyond email preservation, see the [use-case field guide](USE_CASES.md). Each scenario includes an AI-free workflow and an optional local AI workflow.
+
 ## 1. Why an archive is different from an inbox
 
 Imagine changing internet providers, retiring an old domain, reaching a mailbox quota, or needing to find an agreement from five years ago. Your mail provider may be excellent at delivering today's messages, yet your historical correspondence remains dependent on that provider.

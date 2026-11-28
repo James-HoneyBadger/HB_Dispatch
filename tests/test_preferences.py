@@ -3,8 +3,8 @@
 import tempfile, unittest
 from pathlib import Path
 from unittest import mock
-from preferences import DEFAULTS,validate,load,save,decode,export
-from dispatch import Archive
+from hb_engine.preferences import DEFAULTS,validate,load,save,decode,export
+from hb_engine.dispatch import Archive
 
 class PreferenceTests(unittest.TestCase):
     def setUp(self):
@@ -30,7 +30,7 @@ class PreferenceTests(unittest.TestCase):
             m=mock.MagicMock();m.__enter__.return_value=m
             m.select.return_value=('OK',[b'2']);m.response.return_value=('UIDVALIDITY',[b'1'])
             m.uid.side_effect=[('OK',[b'1 2']),('OK',[(b'1',b'Subject: test\r\n\r\nbody')])]
-            with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m) as connect:
+            with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m) as connect:
                 self.assertEqual(ar.sync('host','user','pw'),1)
                 self.assertEqual(connect.call_args.kwargs['timeout'],90)
             self.assertEqual(ar.stats()['origins'],1)

@@ -80,6 +80,8 @@ matrix before merge. Use conventional commit prefixes (`fix:`, `feat:`,
 
 ## Coding standards
 
+- Implementations live under `hb_engine/`; root holds only the CLI and Tk entry
+  points. Import engine modules by their full path.
 - Standard library first. Optional dependencies must be import-guarded and fail
   with an actionable message.
 - Fail closed. A missing key, credential backend or integrity check is an error,

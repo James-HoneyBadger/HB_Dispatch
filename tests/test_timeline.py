@@ -3,9 +3,9 @@
 """Normalized chronology: timestamp parsing, migration backfill and ordering."""
 import sqlite3, tempfile, unittest
 from pathlib import Path
-from dispatch import Archive, timeline_rows, correspondent_counts
-from migrations import MIGRATIONS, apply, current_version
-from timestamps import parse_timestamp
+from hb_engine.dispatch import Archive, timeline_rows, correspondent_counts
+from hb_engine.migrations import MIGRATIONS, apply, current_version
+from hb_engine.timestamps import parse_timestamp
 
 def message(date, body='body', sender='s@example.invalid'):
     return (f'Subject: test\r\nFrom: {sender}\r\nDate: {date}\r\n\r\n{body}').encode()

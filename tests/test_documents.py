@@ -4,11 +4,11 @@ import json, tempfile, unittest
 from unittest import mock
 from pathlib import Path
 
-from dispatch import Archive
-from documents import preview, import_files
-from intelligence import Intelligence
-from unified import search_unified
-from advanced_search import search_advanced
+from hb_engine.dispatch import Archive
+from hb_engine.documents import preview, import_files
+from hb_engine.intelligence import Intelligence
+from hb_engine.unified import search_unified
+from hb_engine.advanced_search import search_advanced
 
 
 class DocumentImportTests(unittest.TestCase):
@@ -36,7 +36,7 @@ class DocumentImportTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_preview_reports_supported_and_optional_extractors(self):
-        with mock.patch('documents.extractor_name',
+        with mock.patch('hb_engine.documents.extractor_name',
                         side_effect=lambda extension: None if extension == '.pdf' else 'builtin'):
             result = preview([str(self.sources)])
         self.assertEqual(result['files_discovered'], 7)
@@ -76,7 +76,7 @@ class DocumentImportTests(unittest.TestCase):
         rows = self.archive.db.execute(
             'SELECT 1 FROM messages').fetchall()
         self.assertEqual(rows, [])
-        from catalog import Catalog
+        from hb_engine.catalog import Catalog
         catalog = Catalog(self.root)
         try:
             revisions = catalog.db.execute(
@@ -107,8 +107,8 @@ class DocumentImportTests(unittest.TestCase):
         self.assertTrue(evidence['source_location'].startswith('catalog.sqlite3#records/'))
 
     def test_import_closes_catalog_if_archive_cannot_open(self):
-        with mock.patch('catalog.Catalog') as catalog_cls, \
-             mock.patch('dispatch.Archive', side_effect=OSError('locked')):
+        with mock.patch('hb_engine.catalog.Catalog') as catalog_cls, \
+             mock.patch('hb_engine.dispatch.Archive', side_effect=OSError('locked')):
             catalog_cls.return_value = mock.Mock()
             with self.assertRaises(OSError):
                 import_files([], self.root)

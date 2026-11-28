@@ -3,7 +3,7 @@
 """Archive report assembly, rendering and exclusive writing."""
 import json, tempfile, unittest
 from pathlib import Path
-from reporting import (build_archive_report, render, render_html, render_markdown,
+from hb_engine.reporting import (build_archive_report, render, render_html, render_markdown,
                        write_report)
 
 SOURCES = {

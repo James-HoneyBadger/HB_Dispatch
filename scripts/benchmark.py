@@ -23,9 +23,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from dispatch import Archive, timeline_rows  # noqa: E402
-from ipc import _dashboard  # noqa: E402
-from unified import search_unified  # noqa: E402
+from hb_engine.dispatch import Archive, timeline_rows  # noqa: E402
+from hb_engine.ipc import _dashboard  # noqa: E402
+from hb_engine.unified import search_unified  # noqa: E402
 
 WORDS = (
     'archive preserve history record document photograph journal letter memory '

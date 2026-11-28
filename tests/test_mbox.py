@@ -4,7 +4,7 @@ import hashlib, tempfile, threading, unittest
 from pathlib import Path
 from unittest import mock
 
-from dispatch import Archive
+from hb_engine.dispatch import Archive
 from hb_engine import mbox
 
 FIXTURE = """From ada.example@example.invalid Tue Mar 14 09:15:00 2023

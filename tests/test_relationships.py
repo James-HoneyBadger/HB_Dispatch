@@ -4,8 +4,8 @@
 import tempfile, unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from catalog import Catalog
-from dispatch import Archive
+from hb_engine.catalog import Catalog
+from hb_engine.dispatch import Archive
 
 
 def message(sender, subject, date, message_id, reply_to=None):

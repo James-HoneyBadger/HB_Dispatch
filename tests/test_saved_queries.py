@@ -3,9 +3,9 @@
 """Saved advanced query trees in the research overlay."""
 import io, tempfile, unittest
 from pathlib import Path
-from dispatch import Archive
-from ipc import IPCServer, PROTOCOL_VERSION
-from research import Research
+from hb_engine.dispatch import Archive
+from hb_engine.ipc import IPCServer, PROTOCOL_VERSION
+from hb_engine.research import Research
 
 
 def tree(value='gold'):

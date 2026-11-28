@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from schedulers import SchedulerError, get_scheduler
+from hb_engine.schedulers import SchedulerError, get_scheduler
 
 SECRET_MARKERS = ('password', 'passwd', 'secret')
 SKIP_MARKERS = ('Failed to connect to bus', 'Bootstrap failed', 'Could not find domain',

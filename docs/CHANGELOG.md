@@ -3,6 +3,14 @@
 Notable changes per release. Historical detail lives in
 [the qualification log](engineering/QUALIFICATION_LOG.md).
 
+## Unreleased
+
+- Repository layout: the eighteen root-level alias modules were removed and the
+  Tk interface moved to `hb_engine/tk/`. Root now holds only the two entry
+  points, `dispatch.py` and `desktop.py`. Import the engine directly
+  (`from hb_engine.catalog import Catalog`); see
+  [architecture](ARCHITECTURE.md).
+
 ## 1.0.0 — stable personal-use release
 
 Storage formats frozen for this series.

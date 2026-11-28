@@ -3,8 +3,8 @@
 """Source enable/disable, removal previews and safe removal semantics."""
 import json, tempfile, unittest
 from pathlib import Path
-from dispatch import Archive
-from facebook import import_files as facebook_import
+from hb_engine.dispatch import Archive
+from hb_engine.facebook import import_files as facebook_import
 
 def message(subject, body, sender='a@example.invalid'):
     return (f'From: {sender}\r\nSubject: {subject}\r\n'
@@ -165,8 +165,8 @@ class CatalogRemovalTests(unittest.TestCase):
         self.assertTrue(self.export.exists())
         result=self.a.source_remove('catalog','facebook',confirm=True)
         self.assertTrue(result['removed'])
-        from catalog import Catalog
-        from unified import search_unified
+        from hb_engine.catalog import Catalog
+        from hb_engine.unified import search_unified
         catalog=Catalog(self.root)
         try:
             self.assertEqual(catalog.stats(),{'files':0,'records':0})

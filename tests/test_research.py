@@ -2,8 +2,8 @@
 # Copyright (c) 2026 Honey Badger Universe
 import tempfile,unittest
 from pathlib import Path
-from dispatch import Archive
-from research import Research
+from hb_engine.dispatch import Archive
+from hb_engine.research import Research
 class ResearchTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.a=Archive(Path(self.tmp.name))

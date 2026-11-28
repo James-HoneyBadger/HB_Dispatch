@@ -3,11 +3,11 @@
 """Curated evidence collections: membership, metadata and manifests."""
 import json, tempfile, unittest
 from pathlib import Path
-from dispatch import Archive
-from research import Research
-from catalog import Catalog
-from facebook import import_files as facebook_import
-from reporting import (build_collection_manifest, render_collection,
+from hb_engine.dispatch import Archive
+from hb_engine.research import Research
+from hb_engine.catalog import Catalog
+from hb_engine.facebook import import_files as facebook_import
+from hb_engine.reporting import (build_collection_manifest, render_collection,
                        write_collection_manifest)
 
 def message():
@@ -109,7 +109,7 @@ class CollectionTests(unittest.TestCase):
             self.research.draft_get(draft['id'])
 
     def test_draft_report_orders_chronology_and_reports_gaps(self):
-        from reporting import build_draft_report, render_draft, write_draft_report
+        from hb_engine.reporting import build_draft_report, render_draft, write_draft_report
         second=self.archive.ingest(
             b'From: b@example.invalid\r\nSubject: Later evidence\r\n'
             b'Date: Wed, 03 Jan 2024 10:00:00 +0000\r\n\r\nbody')

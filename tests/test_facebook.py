@@ -2,8 +2,8 @@
 # Copyright (c) 2026 Honey Badger Universe
 import json, tempfile, unittest
 from pathlib import Path
-from facebook import preview, import_files, _expand, _extract_items, _normalize
-from catalog import Catalog, catalog_health, target_version
+from hb_engine.facebook import preview, import_files, _expand, _extract_items, _normalize
+from hb_engine.catalog import Catalog, catalog_health, target_version
 
 class FacebookImportTests(unittest.TestCase):
     def setUp(self):
@@ -244,7 +244,7 @@ class FacebookImportTests(unittest.TestCase):
 
     def test_catalog_health_does_not_migrate_an_old_catalog(self):
         import sqlite3
-        from catalog import MIGRATIONS
+        from hb_engine.catalog import MIGRATIONS
         conn=sqlite3.connect(self.root/'catalog.sqlite3')
         try:
             for statement in MIGRATIONS[1]:
@@ -262,7 +262,7 @@ class FacebookImportTests(unittest.TestCase):
 
     def test_catalog_health_flags_an_outdated_schema_without_migrating(self):
         import sqlite3
-        from catalog import MIGRATIONS
+        from hb_engine.catalog import MIGRATIONS
         conn=sqlite3.connect(self.root/'catalog.sqlite3')
         try:
             for statement in MIGRATIONS[1]:
@@ -406,7 +406,7 @@ class FacebookImportTests(unittest.TestCase):
 
     def test_migration_upgrades_v1(self):
         import sqlite3
-        from catalog import MIGRATIONS
+        from hb_engine.catalog import MIGRATIONS
         path=self.root/'catalog.sqlite3'
         conn=sqlite3.connect(path)
         for stmt in MIGRATIONS[1]:

@@ -3,13 +3,13 @@
 """Real-process tests for the cross-platform archive write lock."""
 import os, subprocess, sys, tempfile, time, unittest
 from pathlib import Path
-from sync_lock import LOCK_SUPPORTED, SyncBusy, file_lock, sync_lock
+from hb_engine.sync_lock import LOCK_SUPPORTED, SyncBusy, file_lock, sync_lock
 
 ROOT = Path(__file__).resolve().parent.parent
 
 HOLDER = (
     'import sys\n'
-    'from sync_lock import sync_lock\n'
+    'from hb_engine.sync_lock import sync_lock\n'
     'with sync_lock(sys.argv[1]):\n'
     '    print("locked", flush=True)\n'
     '    sys.stdin.read()\n'

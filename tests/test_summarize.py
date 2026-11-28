@@ -3,9 +3,9 @@
 import http.server, json, tempfile, threading, unittest
 from pathlib import Path
 from unittest import mock
-from dispatch import Archive
-from preferences import validate
-from summarize import Summarizer, OllamaError
+from hb_engine.dispatch import Archive
+from hb_engine.preferences import validate
+from hb_engine.summarize import Summarizer, OllamaError
 
 def prefs(enabled=True, backend='ollama', endpoint='http://127.0.0.1:1', **overrides):
     values = {'ai_enabled': enabled, 'ai_backend': backend, 'ai_endpoint': endpoint,
@@ -151,7 +151,7 @@ class SummarizerTests(unittest.TestCase):
         with FakeOllama(content='x' * 3000) as fake:
             s = Summarizer(self.root, prefs(endpoint=fake.url))
             try:
-                with mock.patch('summarize.MAX_RESPONSE', 1024):
+                with mock.patch('hb_engine.summarize.MAX_RESPONSE', 1024):
                     with self.assertRaises(OllamaError):
                         s.summarize_message(self.h)
             finally:

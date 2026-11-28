@@ -22,9 +22,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from dispatch import Archive  # noqa: E402
-from documents import import_files  # noqa: E402
-from intelligence import Intelligence, OllamaClient  # noqa: E402
+from hb_engine.dispatch import Archive  # noqa: E402
+from hb_engine.documents import import_files  # noqa: E402
+from hb_engine.intelligence import Intelligence, OllamaClient  # noqa: E402
 
 MESSAGES = (
     ('2019-03-04', 'alice@example.invalid', 'Silver invoice',

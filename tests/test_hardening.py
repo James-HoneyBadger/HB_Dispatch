@@ -4,10 +4,10 @@ import hashlib, json, os, tempfile, unittest
 from email.message import EmailMessage
 from pathlib import Path
 from unittest.mock import patch
-from dispatch import Archive
-from documents import ExtractionUnavailable
-from mime_index import html_text
-from backup import backup, restore, validate_snapshot
+from hb_engine.dispatch import Archive
+from hb_engine.documents import ExtractionUnavailable
+from hb_engine.mime_index import html_text
+from hb_engine.backup import backup, restore, validate_snapshot
 
 class HardeningTests(unittest.TestCase):
     def setUp(self):
@@ -45,8 +45,8 @@ class HardeningTests(unittest.TestCase):
         m=EmailMessage(); m['Subject']='Documents'; m.set_content('body')
         m.add_attachment(b'%PDF fake',maintype='application',subtype='pdf',filename='invoice.pdf')
         m.add_attachment(b'PK fake',maintype='application',subtype='octet-stream',filename='report.docx')
-        with patch('documents._extract_pdf',return_value=('pdftransaction note',[],'pypdf')), \
-             patch('documents._extract_docx',return_value=('docxtransaction note',[],'python-docx')):
+        with patch('hb_engine.documents._extract_pdf',return_value=('pdftransaction note',[],'pypdf')), \
+             patch('hb_engine.documents._extract_docx',return_value=('docxtransaction note',[],'python-docx')):
             h=self.a.ingest(m.as_bytes())
         self.assertEqual(self.a.find('pdftransaction')[0][0],h)
         self.assertEqual(self.a.find('docxtransaction')[0][0],h)
@@ -55,7 +55,7 @@ class HardeningTests(unittest.TestCase):
     def test_unavailable_binary_attachment_extractor_does_not_reject_message(self):
         m=EmailMessage(); m['Subject']='Scanned'; m.set_content('body')
         m.add_attachment(b'%PDF fake',maintype='application',subtype='pdf',filename='scan.pdf')
-        with patch('documents._extract_pdf',side_effect=ExtractionUnavailable('missing pypdf')):
+        with patch('hb_engine.documents._extract_pdf',side_effect=ExtractionUnavailable('missing pypdf')):
             h=self.a.ingest(m.as_bytes())
         self.assertEqual(self.a.find('scan')[0][0],h)
         self.assertEqual(self.a.verify(),[])
@@ -63,24 +63,24 @@ class HardeningTests(unittest.TestCase):
     def test_reindex_retries_attachments_after_optional_extractor_install(self):
         m=EmailMessage(); m['Subject']='Scanned'; m.set_content('body')
         m.add_attachment(b'%PDF fake',maintype='application',subtype='pdf',filename='scan.pdf')
-        with patch('documents._extract_pdf',side_effect=ExtractionUnavailable('missing pypdf')):
+        with patch('hb_engine.documents._extract_pdf',side_effect=ExtractionUnavailable('missing pypdf')):
             h=self.a.ingest(m.as_bytes())
         self.assertEqual(self.a.find('laterextract'),[])
-        with patch('documents.binary_extractors_available',return_value=True), \
-             patch('documents._extract_pdf',return_value=('laterextract',[],'pypdf')):
+        with patch('hb_engine.documents.binary_extractors_available',return_value=True), \
+             patch('hb_engine.documents._extract_pdf',return_value=('laterextract',[],'pypdf')):
             self.assertEqual(self.a.reindex(),1)
         self.assertEqual(self.a.find('laterextract')[0][0],h)
 
     def test_reindex_retries_older_binary_attachment_extraction(self):
         m=EmailMessage(); m['Subject']='Invoice'; m.set_content('body')
         m.add_attachment(b'%PDF fake',maintype='application',subtype='pdf',filename='invoice.pdf')
-        with patch('documents._extract_pdf',return_value=('upgradedtransaction',[],'pypdf')):
+        with patch('hb_engine.documents._extract_pdf',return_value=('upgradedtransaction',[],'pypdf')):
             h=self.a.ingest(m.as_bytes())
         with self.a.db:
             self.a.db.execute('UPDATE extraction_versions SET version=2 WHERE hash=?',(h,))
             self.a.db.execute('UPDATE search SET body=replace(body,?,?)',('upgradedtransaction',''))
         self.assertEqual(self.a.find('upgradedtransaction'),[])
-        with patch('documents._extract_pdf',return_value=('upgradedtransaction',[],'pypdf')):
+        with patch('hb_engine.documents._extract_pdf',return_value=('upgradedtransaction',[],'pypdf')):
             self.assertEqual(self.a.reindex(),1)
         self.assertEqual(self.a.find('upgradedtransaction')[0][0],h)
 
@@ -107,8 +107,8 @@ class HardeningTests(unittest.TestCase):
 
     def test_backup_includes_the_catalog_and_source(self):
         import json
-        from facebook import import_files
-        from catalog import Catalog
+        from hb_engine.facebook import import_files
+        from hb_engine.catalog import Catalog
         export=self.root/'posts.json'
         export.write_text(json.dumps({'your_posts':[
             {'timestamp':1700000000,'data':[{'post':'Bullion receipt'}]}]}))
@@ -128,8 +128,8 @@ class HardeningTests(unittest.TestCase):
 
     def test_snapshot_rejects_catalog_index_drift(self):
         import json, sqlite3
-        from facebook import import_files
-        from backup import digest
+        from hb_engine.facebook import import_files
+        from hb_engine.backup import digest
         export=self.root/'posts.json'
         export.write_text(json.dumps({'your_posts':[
             {'timestamp':1700000000,'data':[{'post':'Bullion receipt'}]}]}))
@@ -150,8 +150,8 @@ class HardeningTests(unittest.TestCase):
 
     def test_snapshot_rejects_catalog_index_content_drift(self):
         import json, sqlite3
-        from facebook import import_files
-        from backup import digest
+        from hb_engine.facebook import import_files
+        from hb_engine.backup import digest
         export=self.root/'posts.json'
         export.write_text(json.dumps({'your_posts':[
             {'timestamp':1700000000,'data':[{'post':'Bullion receipt'}]}]}))
@@ -219,7 +219,7 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(self.a.verify(),[])
 
     def test_ingest_is_refused_while_sync_holds_the_lock(self):
-        from sync_lock import LOCK_SUPPORTED, sync_lock, SyncBusy
+        from hb_engine.sync_lock import LOCK_SUPPORTED, sync_lock, SyncBusy
         if not LOCK_SUPPORTED: self.skipTest('archive locking is unsupported here')
         with sync_lock(self.a.root):
             with self.assertRaises(SyncBusy): self.a.ingest(b'Subject: busy')

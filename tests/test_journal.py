@@ -3,8 +3,8 @@
 """User-authored journal entries: revisions, soft deletion and validation."""
 import tempfile, unittest
 from pathlib import Path
-from dispatch import Archive
-from research import Research
+from hb_engine.dispatch import Archive
+from hb_engine.research import Research
 
 class JournalTests(unittest.TestCase):
     def setUp(self):
