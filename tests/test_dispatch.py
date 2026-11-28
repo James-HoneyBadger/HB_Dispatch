@@ -446,3 +446,70 @@ class FolderStateHardeningTests(unittest.TestCase):
         status,seen=self.a.db.execute(
             'SELECT status, last_seen_uid FROM imap_folder_state').fetchone()
         self.assertEqual((status,seen),('error',1))
+
+
+class SyncCheckpointTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.a=Archive(Path(self.tmp.name)/'archive')
+    def tearDown(self):
+        self.a.db.close()
+
+    def server(self, uids, validity=b'1'):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'2'])
+        m.response.return_value=('UIDVALIDITY',[validity])
+        m.uid.side_effect=uids
+        return m
+
+    def rows(self):
+        return self.a.db.execute(
+            'SELECT status, last_seen_uid, messages_new, finished_at '
+            'FROM sync_checkpoints ORDER BY id').fetchall()
+
+    def test_successful_sync_records_a_finished_checkpoint(self):
+        m=self.server([('OK',[b'1 2']),('OK',[(b'1',RAW)]),('OK',[(b'2',RAW+b'Two')])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw')
+        status,last,new,finished=self.rows()[0]
+        self.assertEqual((status,last,new),('ok',2,2))
+        self.assertIsNotNone(finished)
+
+    def test_failed_sync_records_an_error_checkpoint(self):
+        m=self.server([('OK',[b'1']),('NO',[])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            with self.assertRaises(RuntimeError):
+                self.a.sync('host','user','pw')
+        status,last,new,finished=self.rows()[0]
+        self.assertEqual((status,new),('error',0))
+        self.assertIsNotNone(finished)
+
+    def test_each_run_appends_a_row(self):
+        m=self.server([('OK',[b'1']),('OK',[(b'1',RAW)]),
+                       ('OK',[b'']),('OK',[b''])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw')
+            self.a.sync('host','user','pw')
+        self.assertEqual(len(self.rows()),2)
+
+    def test_setup_failure_still_closes_the_checkpoint(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.login.side_effect=RuntimeError('login refused')
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            with self.assertRaises(RuntimeError):
+                self.a.sync('host','user','pw')
+        status,finished=self.a.db.execute(
+            'SELECT status, finished_at FROM sync_checkpoints').fetchone()
+        self.assertEqual(status,'error')
+        self.assertIsNotNone(finished)
+
+    def test_mid_fetch_failure_records_the_last_ingested_uid(self):
+        m=self.server([('OK',[b'1 2']),('OK',[(b'1',RAW)]),('NO',[])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            with self.assertRaises(RuntimeError):
+                self.a.sync('host','user','pw')
+        status,last,new=self.a.db.execute(
+            'SELECT status, last_seen_uid, messages_new FROM sync_checkpoints'
+        ).fetchone()
+        self.assertEqual((status,last,new),('error',1,1))

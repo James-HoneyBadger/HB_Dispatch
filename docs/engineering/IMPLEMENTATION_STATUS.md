@@ -57,6 +57,7 @@ the release was qualified, not what it contains.
 | MBOX export with manifest and overwrite protection | `mbox-export` | Implemented | `tests/test_mbox.py` |
 | Incremental IMAP synchronization via a UID watermark | `incremental-sync` | Implemented | `tests/test_dispatch.py` |
 | Per-folder IMAP state with coverage counts and UIDVALIDITY reset | `folder-coverage` | Implemented | `tests/test_dispatch.py` |
+| Append-only sync checkpoints per folder run | `sync-checkpoints` | Implemented | `tests/test_dispatch.py` |
 | Mailbox discovery and multi-folder runs | `mailbox-discovery` | Implemented | `tests/test_dispatch.py` |
 | IMAP provider presets with sign-in guidance | `imap-presets` | Implemented | `tests/test_imap_profiles.py` |
 | Attachment-name and attachment-type search filters | `attachment-filters` | Not yet committed | No code in the tag |

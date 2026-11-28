@@ -88,7 +88,7 @@ class DatabaseServiceTests(unittest.TestCase):
         conn = db.connect(path, key=key)
         try:
             outcome = migrations.apply(conn, 'archive')
-            self.assertEqual(outcome['applied'], [1, 2, 3, 4, 5, 6, 7])
+            self.assertEqual(outcome['applied'], [1, 2, 3, 4, 5, 6, 7, 8])
             conn.execute("INSERT INTO messages(hash,subject,body) VALUES ('h','s','encrypted migration')")
             conn.execute("INSERT INTO search(hash,subject,body) VALUES ('h','s','encrypted migration')")
             conn.commit()
