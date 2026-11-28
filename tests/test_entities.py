@@ -131,3 +131,82 @@ class EntityTests(unittest.TestCase):
         new_id = entities.split_alias(self.a.db, alias_id, 'Separate Person')
         self.assertNotEqual(new_id, entity_id)
         self.assertEqual(len(entities.aliases(self.a.db, new_id)), 1)
+
+
+class EntityCliTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / 'archive'
+        from hb_engine.dispatch import Archive
+        a = Archive(self.root)
+        for raw in MESSAGES:
+            a.ingest(raw)
+        a.db.close()
+
+    def run_cli(self, *args):
+        from hb_engine import dispatch as dispatch_module
+        return dispatch_module.main(['--archive', str(self.root), 'entities', *args])
+
+    def test_build_then_list(self):
+        self.assertEqual(self.run_cli('build'), 0)
+        self.assertEqual(self.run_cli('list'), 0)
+
+    def test_timeline_and_aliases_exit_cleanly(self):
+        self.run_cli('build')
+        self.assertEqual(self.run_cli('timeline', '1'), 0)
+        self.assertEqual(self.run_cli('aliases', '1'), 0)
+
+    def test_merge_and_verify_and_split(self):
+        from hb_engine.dispatch import Archive
+        self.run_cli('build')
+        a = Archive(self.root)
+        try:
+            rows = entities.list_entities(a.db)
+            alias_id = entities.aliases(a.db, rows[0]['entity_id'])[0]['alias_id']
+            self.assertEqual(self.run_cli('merge', str(rows[0]['entity_id']),
+                                          str(rows[1]['entity_id'])), 0)
+            self.assertEqual(self.run_cli('verify', str(alias_id)), 0)
+            self.assertEqual(self.run_cli('split', str(alias_id), 'Separate'), 0)
+        finally:
+            a.db.close()
+
+    def test_unknown_entity_reports_failure(self):
+        self.assertEqual(self.run_cli('aliases', '9999'), 0)  # empty list is not an error
+
+
+class EntityIpcTests(unittest.TestCase):
+    def setUp(self):
+        import io
+        from hb_engine.dispatch import Archive
+        from hb_engine.ipc import IPCServer
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        a = Archive(self.root)
+        for raw in MESSAGES:
+            a.ingest(raw)
+        entities.build(a.db)
+        a.db.close()
+        self.server = IPCServer(self.root, out=io.StringIO())
+
+    def request(self, **params):
+        from hb_engine.ipc import PROTOCOL_VERSION
+        return {'protocol_version': PROTOCOL_VERSION, 'request_id': '1',
+                'method': 'entities', 'params': params}
+
+    def test_list_and_timeline(self):
+        listed = self.server.handle(self.request(action='list'))['result']['entities']
+        self.assertTrue(listed)
+        entity_id = listed[0]['entity_id']
+        timeline = self.server.handle(self.request(action='timeline',
+                                                   entity_id=entity_id))['result']['timeline']
+        self.assertTrue(timeline)
+
+    def test_unknown_action_is_rejected(self):
+        response = self.server.handle(self.request(action='nonsense'))
+        self.assertEqual(response['error']['code'], 'INVALID_PARAMS')
+
+    def test_split_requires_a_name(self):
+        response = self.server.handle(self.request(action='split', alias_id=1))
+        self.assertEqual(response['error']['code'], 'INVALID_PARAMS')
