@@ -6,6 +6,8 @@ a language model is optional and local.
 
 **The model is replaceable. The memories are yours.**
 
+For realistic examples of when to use AI and when ordinary search is sufficient, see the [practical field guide](USE_CASES.md). AI is never a prerequisite for accessing your archive.
+
 ## Workflow
 
 1. You ask a natural-language question in the **Intelligence** workspace.

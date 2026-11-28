@@ -62,6 +62,15 @@ issue for a suspected vulnerability.
 - Keeps the primary workflow local: no telemetry, advertising, subscription or
   mandatory cloud account.
 
+## Use Continuum your way
+
+No AI is required for archival work, searches, collections, journals, reports
+or integrity verification. Use the command line for quick lookups, the native
+desktop for broader research, or optional local Ollama for evidence-linked
+questions. The [practical field guide](docs/USE_CASES.md) compares workflows
+with and without AI through eight fictional scenarios, including household
+records, disputes, family history, project research and provider migration.
+
 ## Requirements
 
 - Python 3.12 or newer with SQLite FTS5 support.
@@ -175,6 +184,7 @@ guaranteed to be installed.
 ## Documentation
 
 - [Practical tutorial](docs/TUTORIAL.md)
+- [Use cases and object lessons: with and without AI](docs/USE_CASES.md)
 - [Packaging and local installation](docs/PACKAGING.md)
 - [Encryption and recovery](docs/ENCRYPTION.md)
 - [Encrypted archive migration](docs/ENCRYPTION_MIGRATION.md)
