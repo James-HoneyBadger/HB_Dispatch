@@ -592,6 +592,8 @@ class Archive:
             with sync_lock(self.root):
                 with self.db:
                     self.db.execute('DELETE FROM origins WHERE account=?',(source_key,))
+                    self.db.execute('DELETE FROM imap_folder_state WHERE account_id=?',
+                                    (source_key,))
                     self.db.executemany('DELETE FROM attachment_index WHERE hash=?',
                                         [(h,) for h in unique])
                     self.db.executemany('DELETE FROM extraction_versions WHERE hash=?',
@@ -936,8 +938,9 @@ class Archive:
     def _save_folder_state(self, account, folder, validity, last_uid,
                            remote_count, status):
         local=self.db.execute(
-            'SELECT count(*) FROM origins WHERE account=? AND folder IN (?,?)',
-            (account, folder, '"'+folder+'"')).fetchone()[0]
+            'SELECT count(DISTINCT uid) FROM origins '
+            'WHERE account=? AND folder IN (?,?) AND validity=?',
+            (account, folder, '"'+folder+'"', validity)).fetchone()[0]
         with self.db:
             self.db.execute(
                 'INSERT INTO imap_folder_state(account_id, folder_name, uidvalidity, '
@@ -1018,7 +1021,9 @@ class Archive:
                     self._ingest(payload[0],origin); count+=1
                     last_uid=max(last_uid,uid_value)
                     if prefs['batch_limit'] and count>=prefs['batch_limit']: break
-            except Exception:
+            except BaseException:
+                # Includes KeyboardInterrupt: an interrupted sync must leave a
+                # resumable checkpoint rather than the previous watermark.
                 self._save_folder_state(account,folder,validity,last_uid,
                                         remote_count,status='error')
                 raise

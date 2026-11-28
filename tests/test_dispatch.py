@@ -385,3 +385,52 @@ class FolderStateTests(unittest.TestCase):
         self.assertEqual(folder['local_messages'],1)
         self.assertEqual(folder['missing'],4)
         self.assertFalse(folder['complete'])
+
+
+class FolderStateHardeningTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.a=Archive(Path(self.tmp.name)/'archive')
+    def tearDown(self):
+        self.a.db.close()
+
+    def server(self, uids, exists=b'2', validity=b'1'):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[exists])
+        m.response.return_value=('UIDVALIDITY',[validity])
+        m.uid.side_effect=uids
+        return m
+
+    def test_removing_a_source_clears_its_folder_state(self):
+        m=self.server([('OK',[b'1']),('OK',[(b'1',RAW)])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw')
+        self.a.source_remove('email','host|user',confirm=True)
+        rows=self.a.db.execute('SELECT count(*) FROM imap_folder_state').fetchone()[0]
+        self.assertEqual(rows,0)
+
+    def test_local_count_ignores_previous_uidvalidity_epochs(self):
+        self.a.ingest(RAW,('host|user','INBOX','1','1'))
+        self.a.ingest(RAW+b'old',('host|user','INBOX','1','2'))
+        m=self.server([('OK',[b'5']),('OK',[(b'5',RAW+b'new')])],exists=b'5',validity=b'2')
+        m.response.side_effect=[('UIDVALIDITY',[b'2'])]
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw')
+        remote,local=self.a.db.execute(
+            'SELECT remote_message_count, local_message_count FROM imap_folder_state'
+        ).fetchone()
+        self.assertEqual((remote,local),(5,1))
+        coverage=self.a.health()['folder_coverage']
+        self.assertFalse(coverage['folders'][0]['complete'])
+        self.assertEqual(coverage['folders'][0]['missing'],4)
+
+    def test_keyboard_interrupt_is_recorded_as_an_error_checkpoint(self):
+        m=self.server([('OK',[b'1 2']),('OK',[(b'1',RAW)]),('OK',[(b'2',RAW+b'Two')])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            with mock.patch.object(Archive,'_ingest',side_effect=[None,KeyboardInterrupt()]):
+                with self.assertRaises(KeyboardInterrupt):
+                    self.a.sync('host','user','pw')
+        status,seen=self.a.db.execute(
+            'SELECT status, last_seen_uid FROM imap_folder_state').fetchone()
+        self.assertEqual((status,seen),('error',1))
