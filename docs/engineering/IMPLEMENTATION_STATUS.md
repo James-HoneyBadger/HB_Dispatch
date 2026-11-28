@@ -56,6 +56,7 @@ the release was qualified, not what it contains.
 | MBOX preview: counts, date range, duplicates, problems | `mbox-preview` | Implemented | `tests/test_mbox.py` |
 | MBOX export with manifest and overwrite protection | `mbox-export` | Implemented | `tests/test_mbox.py` |
 | Incremental IMAP synchronization via a UID watermark | `incremental-sync` | Implemented | `tests/test_dispatch.py` |
+| Per-folder IMAP state with coverage counts and UIDVALIDITY reset | `folder-coverage` | Implemented | `tests/test_dispatch.py` |
 | Mailbox discovery and multi-folder runs | `mailbox-discovery` | Implemented | `tests/test_dispatch.py` |
 | Attachment-name and attachment-type search filters | `attachment-filters` | Not yet committed | No code in the tag |
 | Recipient-header indexing and duplicate report | `recipient-index` | Not yet committed | No code in the tag |

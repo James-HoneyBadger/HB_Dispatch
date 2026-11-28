@@ -130,6 +130,16 @@ ARCHIVE_V6 = (
     'CREATE INDEX IF NOT EXISTS source_events_by_time ON source_events(at DESC)',
 )
 
+ARCHIVE_V7 = (
+    'CREATE TABLE IF NOT EXISTS imap_folder_state('
+    'account_id TEXT NOT NULL, folder_name TEXT NOT NULL, uidvalidity TEXT, '
+    'last_seen_uid INTEGER NOT NULL DEFAULT 0, remote_message_count INTEGER, '
+    'local_message_count INTEGER, last_synced_at TEXT, status TEXT NOT NULL, '
+    'PRIMARY KEY(account_id, folder_name))',
+    'CREATE INDEX IF NOT EXISTS imap_folder_state_by_account '
+    'ON imap_folder_state(account_id)',
+)
+
 RESEARCH_V1 = (
     'CREATE TABLE IF NOT EXISTS workspaces('
     'name TEXT PRIMARY KEY, description TEXT NOT NULL)',
@@ -297,7 +307,7 @@ RESEARCH_V6 = (
 
 MIGRATIONS = {
     'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4,
-                5: ARCHIVE_V5, 6: ARCHIVE_V6},
+                5: ARCHIVE_V5, 6: ARCHIVE_V6, 7: ARCHIVE_V7},
     'research': {1: RESEARCH_V1, 2: RESEARCH_V2, 3: RESEARCH_V3, 4: RESEARCH_V4,
                  5: RESEARCH_V5, 6: RESEARCH_V6},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3, 4: CATALOG_V4,

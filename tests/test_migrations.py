@@ -148,8 +148,8 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(sorted(MIGRATIONS['catalog']),[1,2,3,4,5])
 
     def test_archive_version_registry(self):
-        self.assertEqual(target_version('archive'),6)
-        self.assertEqual(sorted(MIGRATIONS['archive']),[1,2,3,4,5,6])
+        self.assertEqual(target_version('archive'),7)
+        self.assertEqual(sorted(MIGRATIONS['archive']),[1,2,3,4,5,6,7])
 
     def test_archive_v1_upgrades_to_v2_keeping_rows(self):
         db=sqlite3.connect(self.root/'archive.sqlite3')
@@ -162,7 +162,7 @@ class MigrationTests(unittest.TestCase):
             db.execute('INSERT INTO search VALUES(?,?,?,?)',('b'*64,'Subject','s@e','body'))
             db.commit()
             result=apply(db,'archive')
-            self.assertEqual(result['applied'],[2,3,4,5,6])
+            self.assertEqual(result['applied'],[2,3,4,5,6,7])
             tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertTrue({'attachment_index','extraction_versions','import_runs'}<=tables)
             self.assertEqual(db.execute('SELECT count(*) FROM import_runs').fetchone()[0],0)

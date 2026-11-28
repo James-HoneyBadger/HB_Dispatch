@@ -11,6 +11,7 @@ import html
 import json
 import os
 from datetime import datetime, timezone
+import sqlite3
 from pathlib import Path
 
 EXTENSIONS = {'markdown': '.md', 'json': '.json', 'html': '.html'}
@@ -375,6 +376,38 @@ def render(report, fmt):
     except KeyError:
         raise ValueError(f'Unsupported report format {fmt!r}') from None
     return renderer(report)
+
+def folder_coverage(db):
+    """Per-folder synchronization coverage from imap_folder_state.
+
+    A folder is complete when the server reported at least as many messages as
+    the archive holds locally. Anything else is incomplete for a reason the
+    operator needs to see, so the reason is reported rather than guessed.
+    """
+    try:
+        rows = db.execute(
+            'SELECT account_id, folder_name, uidvalidity, last_seen_uid, '
+            'remote_message_count, local_message_count, last_synced_at, status '
+            'FROM imap_folder_state ORDER BY account_id, folder_name').fetchall()
+    except sqlite3.OperationalError:
+        return {'available': False, 'folders': [], 'incomplete': 0}
+    folders = []
+    incomplete = 0
+    for (account, folder, validity, last_uid, remote, local,
+         synced_at, status) in rows:
+        missing = None
+        if isinstance(remote, int) and isinstance(local, int):
+            missing = max(0, remote - local)
+        complete = bool(missing == 0 and status == 'ok')
+        if not complete:
+            incomplete += 1
+        folders.append({'account': account, 'folder': folder,
+                        'uidvalidity': validity, 'last_seen_uid': last_uid,
+                        'remote_messages': remote, 'local_messages': local,
+                        'missing': missing, 'last_synced_at': synced_at,
+                        'status': status, 'complete': complete})
+    return {'available': True, 'folders': folders, 'incomplete': incomplete}
+
 
 def write_report(report, fmt, destination):
     """Write a rendered report, refusing to replace an existing file.

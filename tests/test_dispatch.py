@@ -240,3 +240,197 @@ class MailboxDiscoveryTests(unittest.TestCase):
         with mock.patch.object(Archive,'mailboxes',staticmethod(lambda *a: [])):
             with self.assertRaises(ValueError):
                 self.a.sync_mailboxes('host','user','pw')
+
+
+class _StubDatabase:
+    def close(self):
+        return None
+
+
+class StubArchive:
+    """Stands in for Archive in CLI tests so no database handle is opened."""
+    report = None
+
+    def __init__(self, report):
+        StubArchive.report = report
+
+    def __call__(self, root):
+        return self
+
+    @property
+    def db(self):
+        return _StubDatabase()
+
+    def sync_mailboxes(self, host, user, password):
+        return StubArchive.report
+
+
+class DiscoveryQuotingTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.a=Archive(Path(self.tmp.name)/'archive')
+    def tearDown(self):
+        self.a.db.close()
+
+    def test_a_mailbox_name_containing_quotes_survives_the_round_trip(self):
+        seen=[]
+        def fake_sync(host,user,password,folder):
+            seen.append(folder); return 0
+        with mock.patch.object(Archive,'sync',staticmethod(fake_sync)):
+            self.a.sync_mailboxes('host','user','pw',folders=['"Projects"'])
+        self.assertEqual(seen,['""Projects""'])
+
+    def test_quoted_wrapping_strips_to_the_raw_name_inside_sync(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'1'])
+        m.response.return_value=('UIDVALIDITY',[b'1'])
+        m.uid.return_value=('OK',[b''])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw','""Projects""')
+        m.select.assert_called_once_with('"\\"Projects\\""',readonly=True)
+
+    def test_all_folders_returns_a_failure_exit_when_any_folder_failed(self):
+        from hb_engine import dispatch as dispatch_module
+        report={'folders':{'INBOX':{'error':'boom'}},'imported':0,'failed':1}
+        stub=StubArchive(report)
+        with mock.patch.object(dispatch_module,'Archive',stub), \
+             mock.patch('getpass.getpass',return_value='pw'):
+            code=dispatch_module.main(['--archive',str(self.a.root),'sync','host',
+                                       'user','--all-folders'])
+        self.assertEqual(code,1)
+
+    def test_all_folders_returns_success_when_every_folder_succeeded(self):
+        from hb_engine import dispatch as dispatch_module
+        report={'folders':{'INBOX':{'imported':2}},'imported':2,'failed':0}
+        stub=StubArchive(report)
+        with mock.patch.object(dispatch_module,'Archive',stub), \
+             mock.patch('getpass.getpass',return_value='pw'):
+            code=dispatch_module.main(['--archive',str(self.a.root),'sync','host',
+                                       'user','--all-folders'])
+        self.assertEqual(code,0)
+
+
+class FolderStateTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.a=Archive(Path(self.tmp.name)/'archive')
+    def tearDown(self):
+        self.a.db.close()
+
+    def server(self, uids, exists=b'2', validity=b'1'):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[exists])
+        m.response.return_value=('UIDVALIDITY',[validity])
+        m.uid.side_effect=uids
+        return m
+
+    def state(self, folder='INBOX'):
+        return self.a.db.execute(
+            'SELECT uidvalidity, last_seen_uid, remote_message_count, '
+            'local_message_count, status FROM imap_folder_state '
+            'WHERE folder_name=?',(folder,)).fetchone()
+
+    def test_initial_sync_records_state(self):
+        m=self.server([('OK',[b'1 2']),('OK',[(b'1',RAW)]),('OK',[(b'2',RAW+b'Two')])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertEqual(self.a.sync('host','user','pw'),2)
+        validity,last,remote,local,status=self.state()
+        self.assertEqual((validity,last,remote,local,status),('1',2,2,2,'ok'))
+
+    def test_second_run_uses_the_stored_watermark(self):
+        m=self.server([('OK',[b'1']),('OK',[(b'1',RAW)]),
+                       ('OK',[b'2']),('OK',[(b'2',RAW+b'Two')])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw'); self.a.sync('host','user','pw')
+        searches=[c.args[2] for c in m.uid.call_args_list if c.args[:2]==('search',None)]
+        self.assertEqual(searches,['ALL','UID 2:*'])
+        self.assertEqual(self.state()[1],2)
+
+    def test_uidvalidity_change_warns_and_rescans(self):
+        m=self.server([('OK',[b'1']),('OK',[(b'1',RAW)]),
+                       ('OK',[b'1']),('OK',[(b'1',RAW+b'Rewritten')])],
+                      validity=b'5')
+        m.response.side_effect=[('UIDVALIDITY',[b'1']),('UIDVALIDITY',[b'5'])]
+        with self.assertLogs('hb_engine.dispatch',level='WARNING'):
+            with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+                self.a.sync('host','user','pw'); self.a.sync('host','user','pw')
+        searches=[c.args[2] for c in m.uid.call_args_list if c.args[:2]==('search',None)]
+        self.assertEqual(searches,['ALL','ALL'])
+        self.assertEqual(self.state()[0],'5')
+
+    def test_interrupted_sync_marks_error_and_resumes(self):
+        m=self.server([('OK',[b'1 2']),('OK',[(b'1',RAW)]),('NO',[])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            with self.assertRaises(RuntimeError):
+                self.a.sync('host','user','pw')
+        self.assertEqual(self.state()[4],'error')
+        self.assertEqual(self.state()[1],1)
+        resume=self.server([('OK',[b'2']),('OK',[(b'2',RAW+b'Two')])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=resume):
+            self.assertEqual(self.a.sync('host','user','pw'),1)
+        self.assertEqual(self.state()[1],2)
+        self.assertEqual(self.state()[4],'ok')
+
+    def test_health_reports_folder_coverage(self):
+        m=self.server([('OK',[b'1']),('OK',[(b'1',RAW)])],exists=b'5')
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw')
+        coverage=self.a.health()['folder_coverage']
+        self.assertTrue(coverage['available'])
+        self.assertEqual(coverage['incomplete'],1)
+        folder=coverage['folders'][0]
+        self.assertEqual(folder['remote_messages'],5)
+        self.assertEqual(folder['local_messages'],1)
+        self.assertEqual(folder['missing'],4)
+        self.assertFalse(folder['complete'])
+
+
+class FolderStateHardeningTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.a=Archive(Path(self.tmp.name)/'archive')
+    def tearDown(self):
+        self.a.db.close()
+
+    def server(self, uids, exists=b'2', validity=b'1'):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[exists])
+        m.response.return_value=('UIDVALIDITY',[validity])
+        m.uid.side_effect=uids
+        return m
+
+    def test_removing_a_source_clears_its_folder_state(self):
+        m=self.server([('OK',[b'1']),('OK',[(b'1',RAW)])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw')
+        self.a.source_remove('email','host|user',confirm=True)
+        rows=self.a.db.execute('SELECT count(*) FROM imap_folder_state').fetchone()[0]
+        self.assertEqual(rows,0)
+
+    def test_local_count_ignores_previous_uidvalidity_epochs(self):
+        self.a.ingest(RAW,('host|user','INBOX','1','1'))
+        self.a.ingest(RAW+b'old',('host|user','INBOX','1','2'))
+        m=self.server([('OK',[b'5']),('OK',[(b'5',RAW+b'new')])],exists=b'5',validity=b'2')
+        m.response.side_effect=[('UIDVALIDITY',[b'2'])]
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw')
+        remote,local=self.a.db.execute(
+            'SELECT remote_message_count, local_message_count FROM imap_folder_state'
+        ).fetchone()
+        self.assertEqual((remote,local),(5,1))
+        coverage=self.a.health()['folder_coverage']
+        self.assertFalse(coverage['folders'][0]['complete'])
+        self.assertEqual(coverage['folders'][0]['missing'],4)
+
+    def test_keyboard_interrupt_is_recorded_as_an_error_checkpoint(self):
+        m=self.server([('OK',[b'1 2']),('OK',[(b'1',RAW)]),('OK',[(b'2',RAW+b'Two')])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            with mock.patch.object(Archive,'_ingest',side_effect=[None,KeyboardInterrupt()]):
+                with self.assertRaises(KeyboardInterrupt):
+                    self.a.sync('host','user','pw')
+        status,seen=self.a.db.execute(
+            'SELECT status, last_seen_uid FROM imap_folder_state').fetchone()
+        self.assertEqual((status,seen),('error',1))

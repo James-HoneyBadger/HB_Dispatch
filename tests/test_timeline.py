@@ -113,7 +113,7 @@ class BackfillMigrationTests(unittest.TestCase):
                        ('a'*64,'Hi','s','Tue, 02 Jan 2024 03:04:05 +0000','<m>',None,'body'))
             db.commit()
             apply(db,'archive')
-            self.assertEqual(current_version(db),6)
+            self.assertEqual(current_version(db),7)
             self.assertEqual(db.execute('SELECT sort_ts,date_precision FROM messages').fetchone(),
                              (1704164645,'second'))
         finally:

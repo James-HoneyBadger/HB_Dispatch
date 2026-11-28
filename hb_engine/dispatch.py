@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
 """Local read-only email archive. No network access except explicit sync."""
-import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
+import shutil, argparse, hashlib, imaplib, logging, sqlite3, ssl, json, os, tempfile
 from contextlib import closing
 from datetime import datetime, timezone
 from .db import connect as db_connect
@@ -592,6 +592,8 @@ class Archive:
             with sync_lock(self.root):
                 with self.db:
                     self.db.execute('DELETE FROM origins WHERE account=?',(source_key,))
+                    self.db.execute('DELETE FROM imap_folder_state WHERE account_id=?',
+                                    (source_key,))
                     self.db.executemany('DELETE FROM attachment_index WHERE hash=?',
                                         [(h,) for h in unique])
                     self.db.executemany('DELETE FROM extraction_versions WHERE hash=?',
@@ -763,8 +765,10 @@ class Archive:
             return self._health()
     def _health(self):
         from .catalog import catalog_health
+        from .reporting import folder_coverage
         report = diagnose(self.db, self.raw)
         report['catalog'] = catalog_health(self.root)
+        report['folder_coverage'] = folder_coverage(self.db)
         return report
     def recover_orphans(self, progress=None, cancel_event=None):
         """Re-ingest valid raw originals left behind by an interrupted ingest.
@@ -901,7 +905,10 @@ class Archive:
         result={'folders':{},'imported':0,'failed':0}
         for folder in targets:
             try:
-                count=self.sync(host,user,password,folder)
+                # sync() strips one outer quote pair as legacy input syntax, so
+                # pass the raw name wrapped once; a name that genuinely contains
+                # quotes then survives intact.
+                count=self.sync(host,user,password,'"'+folder+'"')
             except Exception as exc:
                 result['folders'][folder]={'error':f'{type(exc).__name__}: {exc}'}
                 result['failed']+=1
@@ -909,6 +916,43 @@ class Archive:
             result['folders'][folder]={'imported':count}
             result['imported']+=count
         return result
+
+    def _folder_state(self, account, folder):
+        row=self.db.execute(
+            'SELECT uidvalidity, last_seen_uid FROM imap_folder_state '
+            'WHERE account_id=? AND folder_name=?',(account,folder)).fetchone()
+        if not row:
+            return None
+        return {'uidvalidity':row[0], 'last_seen_uid':int(row[1] or 0)}
+
+    def _reset_folder_state(self, account, folder, validity):
+        with self.db:
+            self.db.execute(
+                'INSERT INTO imap_folder_state(account_id, folder_name, uidvalidity, '
+                'last_seen_uid, remote_message_count, local_message_count, '
+                'last_synced_at, status) VALUES(?,?,?,0,NULL,NULL,?,\'reset\') '
+                'ON CONFLICT(account_id, folder_name) DO UPDATE SET '
+                'uidvalidity=excluded.uidvalidity, last_seen_uid=0, status=\'reset\'',
+                (account, folder, validity, _now_utc()))
+
+    def _save_folder_state(self, account, folder, validity, last_uid,
+                           remote_count, status):
+        local=self.db.execute(
+            'SELECT count(DISTINCT uid) FROM origins '
+            'WHERE account=? AND folder IN (?,?) AND validity=?',
+            (account, folder, '"'+folder+'"', validity)).fetchone()[0]
+        with self.db:
+            self.db.execute(
+                'INSERT INTO imap_folder_state(account_id, folder_name, uidvalidity, '
+                'last_seen_uid, remote_message_count, local_message_count, '
+                'last_synced_at, status) VALUES(?,?,?,?,?,?,?,?) '
+                'ON CONFLICT(account_id, folder_name) DO UPDATE SET '
+                'uidvalidity=excluded.uidvalidity, last_seen_uid=excluded.last_seen_uid, '
+                'remote_message_count=excluded.remote_message_count, '
+                'local_message_count=excluded.local_message_count, '
+                'last_synced_at=excluded.last_synced_at, status=excluded.status',
+                (account, folder, validity, int(last_uid or 0), remote_count,
+                 local, _now_utc(), status))
 
     def _sync_watermark(self, account, folder, quoted, validity):
         """Highest UID already stored for this account, folder and UIDVALIDITY.
@@ -933,33 +977,63 @@ class Archive:
         prefs=load(self.root)
         with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=prefs['network_timeout']) as m:
             m.login(user,password)
-            if m.select(quoted,readonly=True)[0]!='OK': raise RuntimeError('Select failed')
+            selected=m.select(quoted,readonly=True)
+            if selected[0]!='OK': raise RuntimeError('Select failed')
+            remote_count=None
+            try:
+                remote_count=int(selected[1][0])
+            except (TypeError, ValueError, IndexError):
+                remote_count=None
             resp=m.response('UIDVALIDITY')[1]
             if not resp or resp[0] is None or not resp[0].decode().isdigit(): raise RuntimeError('Missing UIDVALIDITY')
             validity=resp[0].decode()
-            watermark=self._sync_watermark(host+'|'+user,folder,quoted,validity)
+            account=host+'|'+user
+            state=self._folder_state(account,folder)
+            if state and state['uidvalidity'] not in (None,validity):
+                logging.getLogger(__name__).warning(
+                    'UIDVALIDITY changed for %s on %s (%s -> %s); rescanning',
+                    folder,host,state['uidvalidity'],validity)
+                self._reset_folder_state(account,folder,validity)
+                state=None
+            watermark=(state['last_seen_uid'] if state
+                       else self._sync_watermark(account,folder,quoted,validity))
             # IMAP sequence numbers are unsigned 32-bit; clamp the lower bound so
             # the highest possible UID cannot produce an invalid range.
-            criteria=('ALL' if watermark is None
+            criteria=('ALL' if not watermark
                       else f'UID {min(watermark+1, MAX_IMAP_UID)}:*')
-            status,data=m.uid('search',None,criteria)
-            if status!='OK': raise RuntimeError('Search failed')
             count=0
-            for uid in data[0].split():
-                if watermark is not None:
+            last_uid=watermark or 0
+            try:
+                status,data=m.uid('search',None,criteria)
+                if status!='OK': raise RuntimeError('Search failed')
+                for uid in data[0].split():
                     try:
-                        if int(uid)<=watermark: continue
+                        uid_value=int(uid)
                     except ValueError:
-                        pass
-                origin=(host+'|'+user,folder,validity,uid.decode())
-                if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder IN (?,?) AND validity=? AND uid=?',(origin[0],folder,quoted,validity,uid.decode())).fetchone(): continue
-                status,parts=m.uid('fetch',uid,'(BODY.PEEK[])')
-                if status!='OK': raise RuntimeError('Fetch failed')
-                payload=[p[1] for p in parts if isinstance(p,tuple)]
-                if len(payload)!=1: raise RuntimeError('Unexpected fetch response')
-                self._ingest(payload[0],origin); count+=1
-                if prefs['batch_limit'] and count>=prefs['batch_limit']: break
+                        continue
+                    if watermark and uid_value<=watermark: continue
+                    origin=(account,folder,validity,uid.decode())
+                    if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder IN (?,?) AND validity=? AND uid=?',(origin[0],folder,quoted,validity,uid.decode())).fetchone(): continue
+                    status,parts=m.uid('fetch',uid,'(BODY.PEEK[])')
+                    if status!='OK': raise RuntimeError('Fetch failed')
+                    payload=[p[1] for p in parts if isinstance(p,tuple)]
+                    if len(payload)!=1: raise RuntimeError('Unexpected fetch response')
+                    self._ingest(payload[0],origin); count+=1
+                    last_uid=max(last_uid,uid_value)
+                    if prefs['batch_limit'] and count>=prefs['batch_limit']: break
+            except BaseException:
+                # Includes KeyboardInterrupt: an interrupted sync must leave a
+                # resumable checkpoint rather than the previous watermark.
+                self._save_folder_state(account,folder,validity,last_uid,
+                                        remote_count,status='error')
+                raise
+            self._save_folder_state(account,folder,validity,last_uid,
+                                    remote_count,status='ok')
             return count
+
+def _now_utc():
+    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+
 
 MAX_IMAP_UID = 4294967295
 
@@ -1230,7 +1304,9 @@ def main(argv=None):
     elif a.cmd=='sync':
         password=getpass.getpass()
         if a.all_folders:
-            print(json.dumps(ar.sync_mailboxes(a.host,a.user,password),indent=2))
+            report=ar.sync_mailboxes(a.host,a.user,password)
+            print(json.dumps(report,indent=2))
+            return 0 if not report['failed'] else 1
         else:
             print(ar.sync(a.host,a.user,password,a.folder))
     elif a.cmd=='serve':
