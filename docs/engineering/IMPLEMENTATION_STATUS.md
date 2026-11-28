@@ -1,7 +1,7 @@
 # Implementation status — HB Continuum
 
 This file is the single source of truth for what exists in the released source.
-It is verified against the `v1.0.0` tag and is checked in CI by
+It is verified against the `v1.1.0` tag and is checked in CI by
 `scripts/check_doc_fidelity.py`, which fails when a release note claims a
 capability that is not recorded here.
 
