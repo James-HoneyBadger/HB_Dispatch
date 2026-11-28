@@ -135,18 +135,25 @@ class EntityTests(unittest.TestCase):
 
 class EntityCliTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        from hb_engine.dispatch import Archive
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / 'archive'
-        from hb_engine.dispatch import Archive
-        a = Archive(self.root)
+        self.archive = Archive(self.root)
         for raw in MESSAGES:
-            a.ingest(raw)
-        a.db.close()
+            self.archive.ingest(raw)
+
+    def tearDown(self):
+        # main() registers the connection for interpreter exit; close it here so
+        # Windows can remove the temporary directory.
+        self.archive.db.close()
 
     def run_cli(self, *args):
+        from unittest import mock
         from hb_engine import dispatch as dispatch_module
-        return dispatch_module.main(['--archive', str(self.root), 'entities', *args])
+        with mock.patch.object(dispatch_module, 'Archive',
+                               lambda root: self.archive):
+            return dispatch_module.main(['--archive', str(self.root), 'entities', *args])
 
     def test_build_then_list(self):
         self.assertEqual(self.run_cli('build'), 0)
@@ -158,18 +165,13 @@ class EntityCliTests(unittest.TestCase):
         self.assertEqual(self.run_cli('aliases', '1'), 0)
 
     def test_merge_and_verify_and_split(self):
-        from hb_engine.dispatch import Archive
         self.run_cli('build')
-        a = Archive(self.root)
-        try:
-            rows = entities.list_entities(a.db)
-            alias_id = entities.aliases(a.db, rows[0]['entity_id'])[0]['alias_id']
-            self.assertEqual(self.run_cli('merge', str(rows[0]['entity_id']),
-                                          str(rows[1]['entity_id'])), 0)
-            self.assertEqual(self.run_cli('verify', str(alias_id)), 0)
-            self.assertEqual(self.run_cli('split', str(alias_id), 'Separate'), 0)
-        finally:
-            a.db.close()
+        rows = entities.list_entities(self.archive.db)
+        alias_id = entities.aliases(self.archive.db, rows[0]['entity_id'])[0]['alias_id']
+        self.assertEqual(self.run_cli('merge', str(rows[0]['entity_id']),
+                                      str(rows[1]['entity_id'])), 0)
+        self.assertEqual(self.run_cli('verify', str(alias_id)), 0)
+        self.assertEqual(self.run_cli('split', str(alias_id), 'Separate'), 0)
 
     def test_unknown_entity_reports_failure(self):
         self.assertEqual(self.run_cli('aliases', '9999'), 0)  # empty list is not an error
