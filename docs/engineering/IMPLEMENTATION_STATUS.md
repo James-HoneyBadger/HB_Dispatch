@@ -60,6 +60,9 @@ the release was qualified, not what it contains.
 | Append-only sync checkpoints per folder run | `sync-checkpoints` | Implemented | `tests/test_dispatch.py` |
 | Mailbox discovery and multi-folder runs | `mailbox-discovery` | Implemented | `tests/test_dispatch.py` |
 | IMAP provider presets with sign-in guidance | `imap-presets` | Implemented | `tests/test_imap_profiles.py` |
+| OAuth2 loopback PKCE login with XOAUTH2 and keyring-only token storage | `oauth-pkce` | Implemented | `tests/test_oauth_local.py` |
+| Automatic access-token refresh inside synchronization | `oauth-refresh-in-sync` | Not yet committed | No code in the tag |
+| Desktop UI for the OAuth flow | `oauth-ui` | Not yet committed | No code in the tag |
 | Attachment-name and attachment-type search filters | `attachment-filters` | Not yet committed | No code in the tag |
 | Recipient-header indexing and duplicate report | `recipient-index` | Not yet committed | No code in the tag |
 | OAuth mail authentication | `oauth` | Not yet committed | No code in the tag |
