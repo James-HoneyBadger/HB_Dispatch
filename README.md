@@ -196,6 +196,7 @@ guaranteed to be installed.
 - [Benchmarks](docs/BENCHMARKS.md) and [implementation status](docs/engineering/IMPLEMENTATION_STATUS.md)
 - [Roadmap and known gaps](docs/ROADMAP.md)
 - [Architecture and repository layout](docs/ARCHITECTURE.md)
+- [IMAP provider presets](docs/IMAP_PROVIDERS.md)
 - [Platform qualification](PLATFORM_QUALIFICATION.md) and [security policy](SECURITY.md)
 
 ## Development principles
