@@ -882,14 +882,53 @@ class Archive:
             self.finish_import_run(run,'ok',records_seen=count,records_new=count,
                                    records_existing=0,records_failed=0)
             return count
+    def mailboxes(self, host, user, password):
+        """List selectable mailboxes on the server. Read-only; makes no changes."""
+        from .preferences import load
+        prefs=load(self.root)
+        with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(),
+                               timeout=prefs['network_timeout']) as m:
+            m.login(user,normalize_password(host,password))
+            status,lines=m.list()
+            if status!='OK': raise RuntimeError('List failed')
+        return parse_mailbox_list(lines)
+
+    def sync_mailboxes(self, host, user, password, folders=None):
+        """Synchronize several mailboxes in one run, reporting per-folder results."""
+        targets=(list(folders) if folders is not None
+                 else self.mailboxes(host,user,password))
+        if not targets: raise ValueError('No selectable mailboxes were found')
+        result={'folders':{},'imported':0,'failed':0}
+        for folder in targets:
+            try:
+                count=self.sync(host,user,password,folder)
+            except Exception as exc:
+                result['folders'][folder]={'error':f'{type(exc).__name__}: {exc}'}
+                result['failed']+=1
+                continue
+            result['folders'][folder]={'imported':count}
+            result['imported']+=count
+        return result
+
+    def _sync_watermark(self, account, folder, quoted, validity):
+        """Highest UID already stored for this account, folder and UIDVALIDITY.
+
+        A new UIDVALIDITY means the server renumbered the mailbox, so the
+        watermark is dropped and the next run searches everything again.
+        """
+        row=self.db.execute(
+            'SELECT MAX(CAST(uid AS INTEGER)) FROM origins '
+            'WHERE account=? AND folder IN (?,?) AND validity=?',
+            (account,folder,quoted,validity)).fetchone()
+        return row[0] if row and row[0] is not None else None
+
     def _sync(self, host, user, password, folder):
         if folder.startswith('"') and folder.endswith('"'):
             folder=folder[1:-1]
         if not folder or any(c in folder for c in '\r\n\x00'):
             raise ValueError('Invalid mailbox name')
         quoted='"'+folder.replace('\\','\\\\').replace('"','\\"')+'"'
-        if host.lower()=='imap.gmail.com':
-            password=''.join(password.split())
+        password=normalize_password(host,password)
         from .preferences import load
         prefs=load(self.root)
         with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=prefs['network_timeout']) as m:
@@ -898,10 +937,20 @@ class Archive:
             resp=m.response('UIDVALIDITY')[1]
             if not resp or resp[0] is None or not resp[0].decode().isdigit(): raise RuntimeError('Missing UIDVALIDITY')
             validity=resp[0].decode()
-            status,data=m.uid('search',None,'ALL')
+            watermark=self._sync_watermark(host+'|'+user,folder,quoted,validity)
+            # IMAP sequence numbers are unsigned 32-bit; clamp the lower bound so
+            # the highest possible UID cannot produce an invalid range.
+            criteria=('ALL' if watermark is None
+                      else f'UID {min(watermark+1, MAX_IMAP_UID)}:*')
+            status,data=m.uid('search',None,criteria)
             if status!='OK': raise RuntimeError('Search failed')
             count=0
             for uid in data[0].split():
+                if watermark is not None:
+                    try:
+                        if int(uid)<=watermark: continue
+                    except ValueError:
+                        pass
                 origin=(host+'|'+user,folder,validity,uid.decode())
                 if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder IN (?,?) AND validity=? AND uid=?',(origin[0],folder,quoted,validity,uid.decode())).fetchone(): continue
                 status,parts=m.uid('fetch',uid,'(BODY.PEEK[])')
@@ -911,6 +960,66 @@ class Archive:
                 self._ingest(payload[0],origin); count+=1
                 if prefs['batch_limit'] and count>=prefs['batch_limit']: break
             return count
+
+MAX_IMAP_UID = 4294967295
+
+
+LIST_RE = None
+
+
+def normalize_password(host, password):
+    """Gmail app passwords are shown with spaces that must not be sent."""
+    if host.lower() == 'imap.gmail.com':
+        return ''.join(password.split())
+    return password
+
+
+def _unquote(value):
+    """Decode an IMAP quoted string, handling \\ and \" escapes."""
+    if isinstance(value, bytes):
+        value = value.decode('utf-8', 'replace')
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        inner = value[1:-1]
+        out = []
+        index = 0
+        while index < len(inner):
+            char = inner[index]
+            if char == '\\' and index + 1 < len(inner):
+                index += 1
+                out.append(inner[index])
+            else:
+                out.append(char)
+            index += 1
+        return ''.join(out)
+    return value
+
+
+def parse_mailbox_list(lines):
+    """Names of selectable mailboxes from an IMAP LIST response."""
+    global LIST_RE
+    if LIST_RE is None:
+        import re
+        LIST_RE = re.compile(rb'^\((?P<flags>[^)]*)\)\s+(?:"[^"]*"|NIL)\s+(?P<name>.+)$')
+    names=[]
+    for raw in lines:
+        if raw is None: continue
+        if isinstance(raw, tuple):
+            header, literal = raw
+            match=LIST_RE.match(header if isinstance(header,bytes)
+                                else str(header).encode())
+            if not match: continue
+            name=literal.decode('utf-8','replace') if isinstance(literal,bytes) else str(literal)
+        else:
+            match=LIST_RE.match(raw if isinstance(raw,bytes) else str(raw).encode())
+            if not match: continue
+            name=_unquote(match.group('name').strip())
+        flags=match.group('flags').decode('utf-8','replace').lower()
+        if '\\noselect' in flags or '\\nonexistent' in flags:
+            continue
+        if not name: continue
+        names.append(name)
+    return names
+
 
 def capabilities():
     """Report optional capabilities so packaging omissions are visible.
@@ -945,7 +1054,7 @@ def capabilities():
 def main(argv=None):
     import atexit, getpass, sys
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); fb.add_parser('verify'); fb.add_parser('reindex'); q=sub.add_parser('documents'); dc=q.add_subparsers(dest='dcmd',required=True); dp=dc.add_parser('preview'); dp.add_argument('paths',nargs='+'); di=dc.add_parser('import'); di.add_argument('paths',nargs='+'); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook,document'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('capabilities'); q=sub.add_parser('mbox'); mc=q.add_subparsers(dest='mcmd',required=True); mp=mc.add_parser('preview'); mp.add_argument('path'); mi=mc.add_parser('import'); mi.add_argument('path'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); q.add_argument('--all-folders',action='store_true'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); fb.add_parser('verify'); fb.add_parser('reindex'); q=sub.add_parser('documents'); dc=q.add_subparsers(dest='dcmd',required=True); dp=dc.add_parser('preview'); dp.add_argument('paths',nargs='+'); di=dc.add_parser('import'); di.add_argument('paths',nargs='+'); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook,document'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('capabilities'); q=sub.add_parser('mbox'); mc=q.add_subparsers(dest='mcmd',required=True); mp=mc.add_parser('preview'); mp.add_argument('path'); mi=mc.add_parser('import'); mi.add_argument('path'); me=mc.add_parser('export'); me.add_argument('destination'); me.add_argument('--hash',action='append',default=[]); me.add_argument('--account'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
     sub.add_parser('init-encrypted'); sub.add_parser('encryption-status')
     q=sub.add_parser('migrate-encrypted'); q.add_argument('--destination',required=True); q.add_argument('--backup',required=True)
     a=p.parse_args(argv)
@@ -1039,6 +1148,15 @@ def main(argv=None):
         try:
             if a.mcmd=='preview':
                 print(json.dumps(mbox_module.preview(a.path),indent=2)); return 0
+            if a.mcmd=='export':
+                exported=mbox_module.export_mbox(ar,a.destination,
+                                                 hashes=a.hash or None,
+                                                 account=a.account)
+                print(json.dumps(exported,indent=2))
+                print('WARNING: an exported MBOX file contains plaintext message '
+                      'content and is not protected by database encryption.',
+                      file=sys.stderr)
+                return 0 if not exported['skipped'] and not exported['cancelled'] else 1
             def _report(done, imported, existing, failed):
                 print(f'mbox: message {done} imported={imported} '
                       f'existing={existing} failed={failed}', file=sys.stderr)
@@ -1109,7 +1227,12 @@ def main(argv=None):
     elif a.cmd=='export':
         print('export: exported messages and evidence are plaintext',file=sys.stderr)
         ar.export(a.hashes,a.destination)
-    elif a.cmd=='sync': print(ar.sync(a.host,a.user,getpass.getpass(),a.folder))
+    elif a.cmd=='sync':
+        password=getpass.getpass()
+        if a.all_folders:
+            print(json.dumps(ar.sync_mailboxes(a.host,a.user,password),indent=2))
+        else:
+            print(ar.sync(a.host,a.user,password,a.folder))
     elif a.cmd=='serve':
         from .ipc import IPCServer
         IPCServer(ar.root).serve()

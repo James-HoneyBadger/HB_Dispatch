@@ -13,11 +13,17 @@ path - cannot collide, while re-importing an unchanged file stays idempotent.
 
 The source file is opened read-only and never modified. Each message is hashed
 and stored independently, so an interrupted run leaves a consistent archive.
+
+Export writes each stored message verbatim after a ``From `` separator, quoting
+body lines that begin with ``From `` (mboxrd). Re-importing an exported file is
+therefore a reconstruction, not a byte-identical round trip: compare counts,
+normalised content and metadata rather than hashes.
 """
 
 import email
 import hashlib
 import mailbox
+import os
 from pathlib import Path
 
 from .timestamps import parse_timestamp
@@ -176,4 +182,114 @@ def import_mbox(archive, path, progress=None, cancel_event=None):
                                          'error': f'{type(exc).__name__}: {exc}'})
         if progress is not None:
             progress(done, result['imported'], result['existing'], result['failed'])
+    return result
+class MboxExportError(ValueError):
+    """The destination cannot be written safely."""
+
+
+def _selection(archive, hashes, account):
+    if hashes:
+        rows = []
+        for digest in dict.fromkeys(hashes):
+            if not isinstance(digest, str) or len(digest) != 64:
+                raise MboxExportError(f'not a message hash: {digest!r}')
+            if archive.db.execute('SELECT 1 FROM messages WHERE hash=?',
+                                  (digest,)).fetchone():
+                rows.append((digest,))
+        if not rows:
+            raise MboxExportError('none of the requested messages are in this archive')
+        return rows
+    if account:
+        rows = archive.db.execute(
+            'SELECT DISTINCT hash FROM origins WHERE account=? ORDER BY rowid',
+            (account,)).fetchall()
+        if not rows:
+            raise MboxExportError(f'no messages recorded for account {account}')
+        return rows
+    rows = archive.db.execute(
+        'SELECT hash FROM messages ORDER BY sort_ts, rowid').fetchall()
+    if not rows:
+        raise MboxExportError('this archive has no messages to export')
+    return rows
+
+
+def _separator(raw):
+    import email.utils
+    message = email.message_from_bytes(raw)
+    sender = str(message.get('From', 'unknown@example.invalid'))
+    stamp = email.utils.parsedate_to_datetime(str(message.get('Date', '')) ) if message.get('Date') else None
+    when = stamp.astimezone().ctime() if stamp else 'Thu Jan  1 00:00:00 1970'
+    return f'From {sender} {when}\n'
+
+
+def _quote(raw):
+    """mboxrd quoting: body lines starting with ``From `` gain one ``>``."""
+    quoted = 0
+    out = []
+    for line in raw.splitlines(keepends=True):
+        if line.startswith(b'From '):
+            out.append(b'>' + line)
+            quoted += 1
+        else:
+            out.append(line)
+    return b''.join(out), quoted
+
+
+def export_mbox(archive, destination, hashes=None, account=None,
+                progress=None, cancel_event=None):
+    """Write selected messages to a new MBOX file.
+
+    The file is plaintext once written: warn the user. Writes to a temporary
+    sibling and renames only on success, so a cancelled or failed export leaves
+    no half-written mailbox behind.
+    """
+    rows = _selection(archive, hashes, account)
+    target = Path(destination).expanduser()
+    if target.is_symlink():
+        raise MboxExportError(f'refusing symbolic link: {target}')
+    if target.exists():
+        raise MboxExportError(f'destination already exists: {target}')
+    if not target.parent.is_dir():
+        raise MboxExportError(f'destination directory does not exist: {target.parent}')
+    temp = target.with_name(target.name + '.partial')
+    if temp.exists():
+        raise MboxExportError(f'remove the leftover partial file first: {temp}')
+    total = len(rows)
+    result = {'destination': str(target), 'messages': 0, 'quoted_lines': 0,
+              'bytes': 0, 'cancelled': False, 'skipped': []}
+    try:
+        with open(temp, 'wb') as handle:
+            for done, (digest,) in enumerate(rows, 1):
+                if cancel_event is not None and cancel_event.is_set():
+                    result['cancelled'] = True
+                    break
+                raw_path = archive.raw / f'{digest}.eml'
+                try:
+                    raw = raw_path.read_bytes()
+                except OSError as exc:
+                    result['skipped'].append({'hash': digest, 'error': str(exc)})
+                    continue
+                if hashlib.sha256(raw).hexdigest() != digest:
+                    result['skipped'].append({'hash': digest,
+                                              'error': 'stored bytes do not match their hash'})
+                    continue
+                quoted, count = _quote(raw)
+                payload = _separator(raw).encode('utf-8') + quoted
+                if not payload.endswith(b'\n'):
+                    payload += b'\n'
+                payload += b'\n'
+                handle.write(payload)
+                result['messages'] += 1
+                result['quoted_lines'] += count
+                result['bytes'] += len(payload)
+                if progress is not None:
+                    progress(done, total, result['messages'])
+        if result['cancelled'] or result['skipped']:
+            temp.unlink(missing_ok=True)
+            result['bytes'] = 0
+            return result
+        os.replace(temp, target)
+    finally:
+        if temp.exists():
+            temp.unlink(missing_ok=True)
     return result

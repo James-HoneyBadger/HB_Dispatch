@@ -195,3 +195,70 @@ class ImportTests(MboxCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ExportTests(MboxCase):
+    def setUp(self):
+        super().setUp()
+        self.hashes = []
+        for index, body in enumerate((
+                b'From: a@example.invalid\r\nSubject: First\r\nDate: Tue, 14 Mar 2023 09:15:00 +0000\r\n\r\nPlain body about invoices',
+                b'From: b@example.invalid\r\nSubject: Second\r\nDate: Wed, 15 Mar 2023 10:00:00 +0000\r\n\r\nFrom the beginning of this line',
+        )):
+            self.hashes.append(self.archive.ingest(body))
+
+    def test_export_writes_stored_bytes_verbatim_then_reimports(self):
+        out = self.root / 'out.mbox'
+        result = mbox.export_mbox(self.archive, out, hashes=[self.hashes[0]])
+        self.assertEqual(result['messages'], 1)
+        self.assertEqual(result['quoted_lines'], 0)
+        stored = (self.archive.raw / f'{self.hashes[0]}.eml').read_bytes()
+        payload = out.read_bytes()
+        self.assertTrue(payload.startswith(b'From '))
+        self.assertIn(stored, payload, 'stored bytes must appear verbatim')
+
+        second = Archive(self.root / 'second')
+        try:
+            imported = mbox.import_mbox(second, out)
+            self.assertEqual(imported['imported'], 1)
+            self.assertEqual(second.stats()['messages'], 1)
+            row = second.db.execute(
+                'SELECT subject, sender FROM messages').fetchone()
+            self.assertEqual(row[0], 'First')
+            self.assertEqual(row[1], 'a@example.invalid')
+        finally:
+            second.db.close()
+
+    def test_body_line_starting_with_from_is_quoted(self):
+        out = self.root / 'quoted.mbox'
+        result = mbox.export_mbox(self.archive, out, hashes=[self.hashes[1]])
+        self.assertEqual(result['quoted_lines'], 1)
+        self.assertIn(b'>From the beginning', out.read_bytes())
+
+    def test_existing_destination_is_refused(self):
+        out = self.root / 'exists.mbox'
+        out.write_text('do not clobber')
+        with self.assertRaises(mbox.MboxExportError):
+            mbox.export_mbox(self.archive, out, hashes=[self.hashes[0]])
+        self.assertEqual(out.read_text(), 'do not clobber')
+
+    def test_empty_selection_is_refused(self):
+        with self.assertRaises(mbox.MboxExportError):
+            mbox.export_mbox(self.archive, self.root / 'none.mbox',
+                             hashes=['0' * 64])
+
+    def test_cancellation_leaves_no_partial_file(self):
+        cancel = threading.Event()
+        cancel.set()
+        out = self.root / 'cancelled.mbox'
+        result = mbox.export_mbox(self.archive, out, cancel_event=cancel)
+        self.assertTrue(result['cancelled'])
+        self.assertFalse(out.exists())
+        self.assertFalse((self.root / 'cancelled.mbox.partial').exists())
+
+    def test_account_selection_exports_only_that_source(self):
+        mbox.import_mbox(self.archive, self.box)
+        account = mbox.source_account(self.box)[0]
+        out = self.root / 'account.mbox'
+        result = mbox.export_mbox(self.archive, out, account=account)
+        self.assertEqual(result['messages'], 2)

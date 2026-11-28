@@ -105,5 +105,6 @@ class SchedulingTests(unittest.TestCase):
                 self.assertEqual(ar.sync('imap.gmail.com','user','abcd efgh ijkl mnop','[Gmail]/All Mail'),0)
             m.login.assert_called_once_with('user','abcdefghijklmnop')
             m.select.assert_called_once_with('"[Gmail]/All Mail"',readonly=True)
-            m.uid.assert_called_once_with('search',None,'ALL')
+            # The legacy origin carries UID 42, so the run asks only for newer UIDs.
+            m.uid.assert_called_once_with('search',None,'UID 43:*')
         finally:ar.db.close()

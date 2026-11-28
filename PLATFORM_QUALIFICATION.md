@@ -73,6 +73,20 @@ dependency upgrade, not a version pin.
 
 `glib` enters the lock file through Tauri's GTK dependencies, which are compiled
 only for Linux desktop builds. The qualified macOS Apple Silicon build does not
-compile it, and no Linux desktop artifact is shipped or claimed. The advisory is
-recorded here as a known limitation; resolving it belongs to a deliberate Tauri
-upgrade, not to this refinement milestone.
+compile it, and no Linux desktop artifact is shipped or claimed.
+
+An upgrade was attempted and is not possible from this repository:
+
+```
+$ cargo update -p glib --precise 0.20.0
+error: failed to select a version for the requirement `glib = "^0.18"`
+required by package `gtk v0.18.2`
+... which satisfies dependency `gtk = "^0.18"` (locked to 0.18.2)
+... of package `tauri v2.12.7`
+```
+
+`tauri 2.12.7` pins `gtk ^0.18`, so `glib` cannot move to the patched 0.20.0
+without an upstream GTK-rs migration. The Dependabot alert is therefore
+dismissed as `not_used` with that rationale, not as fixed. Re-check before any
+Linux desktop packaging is attempted, and revisit when Tauri adopts GTK-rs 0.20
+or later.

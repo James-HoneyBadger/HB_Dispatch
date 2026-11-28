@@ -117,7 +117,7 @@ After checking the test folder, repeat for INBOX and other folders using their e
 
 ### Google accounts
 
-Personal Gmail and Google-hosted custom-domain accounts normally use imap.gmail.com and the full email address. Where permitted, a Google app password can be created after enabling 2-Step Verification. Organization policy or account security may prohibit app passwords; consult Google's official account help. If password-based access is unavailable, export original EML via a trusted client or wait for OAuth support. A Gmail Takeout MBOX file can be imported without a mail account: run `dispatch.py mbox preview <file.mbox>` first, then `dispatch.py mbox import <file.mbox>`. Messages extracted from a container are reconstructed, not byte-identical to whatever wrote it.
+Personal Gmail and Google-hosted custom-domain accounts normally use imap.gmail.com and the full email address. Where permitted, a Google app password can be created after enabling 2-Step Verification. Organization policy or account security may prohibit app passwords; consult Google's official account help. If password-based access is unavailable, export original EML via a trusted client or wait for OAuth support. A Gmail Takeout MBOX file can be imported without a mail account: run `dispatch.py mbox preview <file.mbox>` first, then `dispatch.py mbox import <file.mbox>`. Messages extracted from a container are reconstructed, not byte-identical to whatever wrote it. `dispatch.py mbox export <file.mbox>` writes selected messages back out; re-importing an export reproduces content and metadata, not the original hashes.
 
 Official help: https://support.google.com/accounts/answer/185833
 

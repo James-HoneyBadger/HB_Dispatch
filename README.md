@@ -105,6 +105,7 @@ sources:
 ```sh
 python3 dispatch.py --archive ~/HB_Continuum_Archive mbox preview ~/takeout.mbox
 python3 dispatch.py --archive ~/HB_Continuum_Archive mbox import ~/takeout.mbox
+python3 dispatch.py --archive ~/HB_Continuum_Archive mbox export ~/exported.mbox
 python3 dispatch.py --archive ~/HB_Continuum_Archive facebook import ~/facebook-export
 python3 dispatch.py --archive ~/HB_Continuum_Archive documents import ~/documents
 python3 dispatch.py --archive ~/HB_Continuum_Archive search-all "receipt"
