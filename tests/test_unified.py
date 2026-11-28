@@ -3,9 +3,9 @@
 import hashlib, json, tempfile, threading, unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from dispatch import Archive
-from facebook import import_files
-from unified import search_unified, search_unified_count, search_unified_page
+from hb_engine.dispatch import Archive
+from hb_engine.facebook import import_files
+from hb_engine.unified import search_unified, search_unified_count, search_unified_page
 
 class UnifiedSearchTests(unittest.TestCase):
     def setUp(self):
@@ -105,7 +105,7 @@ class UnifiedSearchTests(unittest.TestCase):
         self.assertEqual(len(results),1)
 
     def test_tag_filter_reads_the_research_overlay(self):
-        from research import Research
+        from hb_engine.research import Research
         research=Research(self.a)
         try:
             research.tag(self.a.find('bullion')[0][0],'important')
@@ -116,7 +116,7 @@ class UnifiedSearchTests(unittest.TestCase):
         self.assertEqual(len(results),1)
 
     def test_query_validation_explains_rejections(self):
-        from unified import validate_query
+        from hb_engine.unified import validate_query
         self.assertTrue(validate_query(self.root,'bullion')['valid'])
         self.assertTrue(validate_query(self.root,'"bull ion"')['valid'])
         bad=validate_query(self.root,'a:b')
@@ -125,7 +125,7 @@ class UnifiedSearchTests(unittest.TestCase):
         self.assertFalse(validate_query(self.root,'   ')['valid'])
 
     def test_exact_counts(self):
-        from unified import search_unified_count
+        from hb_engine.unified import search_unified_count
         self.assertEqual(search_unified_count(self.root,'bullion'),2)
         self.assertEqual(search_unified_count(self.root,'bullion',sources=('email',)),1)
         self.assertEqual(search_unified_count(self.root,'bullion',kinds=['post']),1)

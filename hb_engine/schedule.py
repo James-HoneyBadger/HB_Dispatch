@@ -156,7 +156,7 @@ def main(argv=None):
     for cmd in ('tick','status','uninstall','gui'):sub.add_parser(cmd)
     a=p.parse_args(argv);root=Path(a.archive).expanduser().resolve()
     if a.cmd=='gui':
-        from schedule_ui import launch
+        from .tk.schedule_center import launch
         launch(root);return
     profiles=config(root)
     if a.cmd=='add':

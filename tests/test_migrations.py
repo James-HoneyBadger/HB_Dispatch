@@ -2,10 +2,10 @@
 # Copyright (c) 2026 Honey Badger Universe
 import sqlite3, tempfile, unittest
 from pathlib import Path
-from dispatch import Archive
-from research import Research
-from catalog import Catalog
-from migrations import MigrationError, apply, current_version, target_version, MIGRATIONS
+from hb_engine.dispatch import Archive
+from hb_engine.research import Research
+from hb_engine.catalog import Catalog
+from hb_engine.migrations import MigrationError, apply, current_version, target_version, MIGRATIONS
 
 LEGACY_ARCHIVE = '''
 CREATE TABLE messages(hash TEXT PRIMARY KEY, subject TEXT, sender TEXT, date TEXT, message_id TEXT, reply_to TEXT, body TEXT);
@@ -278,7 +278,7 @@ class MigrationTests(unittest.TestCase):
             db.close()
 
     def test_report_dry_run_does_not_write(self):
-        from migrations import report
+        from hb_engine.migrations import report
         self.legacy_archive().close()
         result=report(self.root,dry_run=True)
         self.assertEqual(result['archive']['version'],0)
@@ -291,7 +291,7 @@ class MigrationTests(unittest.TestCase):
             db.close()
 
     def test_report_migrates_and_records_snapshot(self):
-        from migrations import report
+        from hb_engine.migrations import report
         self.legacy_archive().close()
         result=report(self.root)
         self.assertEqual(result['archive']['from'],0)
@@ -302,7 +302,7 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(again['archive']['applied'],[])
 
     def test_cli_migrate_reports_legacy_version(self):
-        from dispatch import main
+        from hb_engine.dispatch import main
         import contextlib, io, json as _json
         self.legacy_archive().close()
         out=io.StringIO()

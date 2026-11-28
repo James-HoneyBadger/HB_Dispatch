@@ -1240,7 +1240,7 @@ def main(argv=None):
         from . import schedule
         schedule.main(['--archive',str(ar.root),*a.args])
     elif a.cmd=='gui':
-        from desktop import launch
+        from .tk.app import launch
         launch(ar)
     return 0
 if __name__=='__main__': raise SystemExit(main())

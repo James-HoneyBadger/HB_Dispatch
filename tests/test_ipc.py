@@ -4,9 +4,9 @@ import hashlib, io, json, os, sqlite3, subprocess, sys, tempfile, time, unittest
 from contextlib import closing
 from pathlib import Path
 from unittest import mock
-from dispatch import Archive
-from ipc import IPCServer, PROTOCOL_VERSION
-from preferences import save as save_prefs
+from hb_engine.dispatch import Archive
+from hb_engine.ipc import IPCServer, PROTOCOL_VERSION
+from hb_engine.preferences import save as save_prefs
 
 def request(method, request_id='1', **params):
     return {'protocol_version': PROTOCOL_VERSION, 'request_id': request_id,
@@ -103,7 +103,7 @@ class IPCServerTests(unittest.TestCase):
             'search_advanced',query=tree,sources=['other']))['error']['code'],'INVALID_PARAMS')
         self.assertEqual(self.server.handle(request('search_advanced'))['error']['code'],
                          'INVALID_PARAMS')
-        from catalog import Catalog
+        from hb_engine.catalog import Catalog
         catalog=Catalog(self.root)
         try:
             with catalog.db:
@@ -241,8 +241,8 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual({m['hash'] for m in resp['result']['messages']},{self.h,reply})
 
     def test_record(self):
-        from facebook import import_files
-        from catalog import Catalog
+        from hb_engine.facebook import import_files
+        from hb_engine.catalog import Catalog
         posts=self.root/'posts.json'
         posts.write_text(json.dumps({'your_posts':[
             {'timestamp': 1700000000,
@@ -265,7 +265,7 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(resp['result']['attachments'][0]['name'],'Article')
 
     def test_record_tolerates_catalog_without_metadata_columns(self):
-        from migrations import MIGRATIONS
+        from hb_engine.migrations import MIGRATIONS
         legacy=self.root/'legacy-catalog'
         legacy.mkdir()
         db=sqlite3.connect(legacy/'catalog.sqlite3')
@@ -288,8 +288,8 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(result['updated_at'],'')
 
     def test_record_includes_revision_versions(self):
-        from facebook import import_files
-        from catalog import Catalog
+        from hb_engine.facebook import import_files
+        from hb_engine.catalog import Catalog
         first=self.root/'posts_a.json'
         first.write_text(json.dumps({'your_posts':[
             {'timestamp': 1700000000, 'data': [{'post': 'First version'}]}]}))
@@ -507,7 +507,7 @@ class IPCServerTests(unittest.TestCase):
         self.assertTrue((self.root/'preferences.json').is_file())
 
     def test_research_list_and_results(self):
-        from research import Research
+        from hb_engine.research import Research
         research=Research(self.a)
         try:
             research.save_search('General','Invoices','invoice')
@@ -550,7 +550,7 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('research_metadata_set',hash=self.h,field='Missing',value='x'))['error']['code'],'INVALID_PARAMS')
 
     def test_research_reports(self):
-        from research import Research
+        from hb_engine.research import Research
         research=Research(self.a)
         try:
             research.save_search('General','all','')
@@ -615,7 +615,7 @@ class IPCServerTests(unittest.TestCase):
                     progress(i + 1, len(hashes), digest, 'summarized')
             return {'total': len(hashes), 'summarized': len(hashes), 'regenerated': 0,
                     'skipped': 0, 'cancelled': 0}
-        with mock.patch('summarize.Summarizer.summarize_batch', fake_batch):
+        with mock.patch('hb_engine.summarize.Summarizer.summarize_batch', fake_batch):
             resp=self.server.handle(request('summarize',hashes=[self.h]))
             job_id=resp['result']['job_id']
             deadline=time.time()+3
@@ -654,7 +654,7 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(resp['result']['index_missing'],[self.h])
 
     def test_health_never_migrates_a_legacy_archive(self):
-        from migrations import MIGRATIONS, current_version
+        from hb_engine.migrations import MIGRATIONS, current_version
         legacy=self.root/'legacy'
         legacy.mkdir()
         db=sqlite3.connect(legacy/'archive.sqlite3')
@@ -679,7 +679,7 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(server.handle(request('health'))['error']['code'],'ARCHIVE_NOT_AVAILABLE')
 
     def test_health_defers_while_archive_is_busy(self):
-        from sync_lock import LOCK_SUPPORTED, sync_lock
+        from hb_engine.sync_lock import LOCK_SUPPORTED, sync_lock
         if not LOCK_SUPPORTED: self.skipTest('archive locking is unsupported here')
         with sync_lock(self.root):
             self.assertEqual(self.server.handle(request('health'))['error']['code'],'ARCHIVE_BUSY')
@@ -736,7 +736,7 @@ class IPCServerTests(unittest.TestCase):
         self.assertFalse(report['research']['present'])
 
     def test_backup_verify_and_restore_jobs(self):
-        from backup import validate_snapshot
+        from hb_engine.backup import validate_snapshot
         with tempfile.TemporaryDirectory() as tmp:
             base=Path(tmp); snapshot=base/'snapshot'; restored=base/'restored'
             started=self.server.handle(request('backup',destination=str(snapshot)))
@@ -754,7 +754,7 @@ class IPCServerTests(unittest.TestCase):
             self.assertTrue(validate_snapshot(restored)['verified'])
 
     def test_verify_backup_job_reports_tampering(self):
-        from backup import backup
+        from hb_engine.backup import backup
         with tempfile.TemporaryDirectory() as tmp:
             snapshot=Path(tmp)/'snapshot'
             backup(self.root, snapshot)
@@ -820,7 +820,7 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('correspondents',limit=0))['error']['code'],'INVALID_PARAMS')
 
     def test_hide_disabled_sources_preference_filters_default_views(self):
-        from preferences import save as save_prefs
+        from hb_engine.preferences import save as save_prefs
         account='hidden@example.invalid'
         with self.a.db:
             self.a.db.execute('INSERT INTO origins VALUES(?,?,?,?,?)',
@@ -857,7 +857,7 @@ class IPCServerTests(unittest.TestCase):
 
     def test_timeline_can_merge_documents(self):
         from datetime import datetime, timezone
-        from documents import import_files
+        from hb_engine.documents import import_files
         document=self.root/'timeline-note.txt'
         document.write_text('Cobalt timeline note',encoding='utf-8')
         stamp=datetime(2026,11,26,10,0,tzinfo=timezone.utc).timestamp()
@@ -903,7 +903,7 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('timeline',offset=-1))['error']['code'],'INVALID_PARAMS')
 
     def test_storage_footprint_prefers_recorded_sizes(self):
-        import ipc as ipc_module
+        import hb_engine.ipc as ipc_module
         expected=(self.root/'raw'/(self.h+'.eml')).stat().st_size
         with mock.patch.object(Path,'iterdir',side_effect=AssertionError('scanned raw directory')):
             footprint=ipc_module._storage_footprint(self.root)

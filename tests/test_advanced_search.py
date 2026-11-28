@@ -3,10 +3,10 @@
 """Nested boolean search: set semantics, metadata rules and exact totals."""
 import tempfile, unittest
 from pathlib import Path
-from advanced_search import search_advanced
-from catalog import Catalog
-from dispatch import Archive
-from research import Research
+from hb_engine.advanced_search import search_advanced
+from hb_engine.catalog import Catalog
+from hb_engine.dispatch import Archive
+from hb_engine.research import Research
 
 
 def message(sender, subject, body, date):

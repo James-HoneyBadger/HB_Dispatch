@@ -4,7 +4,7 @@
 import os, tempfile, threading, unittest
 from pathlib import Path
 from unittest import mock
-from dispatch import Archive
+from hb_engine.dispatch import Archive
 
 def message(subject='imported'):
     return (f'From: a@example.invalid\r\nSubject: {subject}\r\n\r\nbody').encode()

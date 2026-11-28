@@ -3,8 +3,8 @@
 import tempfile, unittest, threading, time
 from pathlib import Path
 from unittest import mock
-from dispatch import Archive
-from search_worker import SearchController, open_readonly, find_readonly, recent_readonly, stats_readonly
+from hb_engine.dispatch import Archive
+from hb_engine.search_worker import SearchController, open_readonly, find_readonly, recent_readonly, stats_readonly
 
 class RecordingScheduler:
     def __init__(self):

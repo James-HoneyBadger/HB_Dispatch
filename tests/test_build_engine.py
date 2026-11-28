@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from dispatch import Archive
+from hb_engine.dispatch import Archive
 
 ROOT = Path(__file__).resolve().parent.parent
 

@@ -4,14 +4,14 @@ import io, json, tempfile, threading, time, unittest
 from pathlib import Path
 from unittest import mock
 
-from dispatch import Archive
-from facebook import import_files
-from intelligence import (Intelligence, ConversationStore, OllamaClient, OllamaError,
+from hb_engine.dispatch import Archive
+from hb_engine.facebook import import_files
+from hb_engine.intelligence import (Intelligence, ConversationStore, OllamaClient, OllamaError,
                          ResearchCancelled, normalize_request, parse_model_output,
                          retrieval_queries)
-from research import Research
-from ipc import IPCServer
-from preferences import save as save_prefs
+from hb_engine.research import Research
+from hb_engine.ipc import IPCServer
+from hb_engine.preferences import save as save_prefs
 
 
 class FakeClient:
@@ -455,7 +455,7 @@ class IntelligenceIPCTests(unittest.TestCase):
         self.assertFalse(result['cancelled'])
 
     def test_ipc_followup_uses_stored_conversation_history(self):
-        from intelligence import ConversationStore
+        from hb_engine.intelligence import ConversationStore
         store = ConversationStore(self.root)
         try:
             conversation = store.create('General', 'Silver investigation')

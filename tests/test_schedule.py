@@ -4,11 +4,12 @@ import tempfile, unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
-from dispatch import Archive
+from hb_engine.dispatch import Archive
 from hb_engine import db, encryption
-from schedule import profile,due,tick,write_json
-import schedule
-from sync_lock import LOCK_SUPPORTED, sync_lock
+from hb_engine import schedule
+from hb_engine.schedule import profile,due,tick,write_json
+import hb_engine.schedule
+from hb_engine.sync_lock import LOCK_SUPPORTED, sync_lock
 
 class SchedulingTests(unittest.TestCase):
     def setUp(self):
@@ -101,7 +102,7 @@ class SchedulingTests(unittest.TestCase):
             m=mock.MagicMock();m.__enter__.return_value=m
             m.select.return_value=('OK',[b'1']);m.response.return_value=('UIDVALIDITY',[b'7'])
             m.uid.return_value=('OK',[b'42'])
-            with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
                 self.assertEqual(ar.sync('imap.gmail.com','user','abcd efgh ijkl mnop','[Gmail]/All Mail'),0)
             m.login.assert_called_once_with('user','abcdefghijklmnop')
             m.select.assert_called_once_with('"[Gmail]/All Mail"',readonly=True)

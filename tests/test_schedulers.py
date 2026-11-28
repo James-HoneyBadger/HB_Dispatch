@@ -3,7 +3,7 @@
 import configparser, io, json, os, sys, tempfile, unittest
 from pathlib import Path
 from unittest import mock
-from schedulers import (LaunchdScheduler, SystemdScheduler, SchtasksScheduler,
+from hb_engine.schedulers import (LaunchdScheduler, SystemdScheduler, SchtasksScheduler,
                         KeychainCredentialStore, KeyringCredentialStore,
                         EncryptedFileCredentialStore, SchedulerError,
                         archive_id, get_scheduler, get_credential_store, sync_command)
@@ -21,7 +21,7 @@ class SystemdTests(unittest.TestCase):
     def tearDown(self):self.tmp.cleanup()
 
     def test_install_daily_writes_units_without_secret(self):
-        with mock.patch('schedulers._run',return_value=OK) as run:
+        with mock.patch('hb_engine.schedulers._run',return_value=OK) as run:
             path=self.s.install(FAKE_ROOT, None, 'daily', None, '06:30')
         calls=[c.args[0] for c in run.call_args_list]
         self.assertIn(['systemctl','--user','daemon-reload'],calls)
@@ -37,7 +37,7 @@ class SystemdTests(unittest.TestCase):
 
     def test_install_reports_missing_user_session(self):
         missing=mock.Mock(returncode=1,stdout=b'',stderr=b'Failed to connect to bus')
-        with mock.patch('schedulers._run',return_value=missing):
+        with mock.patch('hb_engine.schedulers._run',return_value=missing):
             with self.assertRaises(SchedulerError) as caught:
                 self.s.install(FAKE_ROOT)
         self.assertIn('loginctl enable-linger',str(caught.exception))
@@ -48,26 +48,26 @@ class SystemdTests(unittest.TestCase):
             if args[-1].endswith('.timer') and 'enable' in args:
                 raise SchedulerError('enable failed')
             return OK
-        with mock.patch('schedulers._run',side_effect=run):
+        with mock.patch('hb_engine.schedulers._run',side_effect=run):
             with self.assertRaises(SchedulerError):
                 self.s.install(FAKE_ROOT)
         self.assertFalse(self.s.timer_path(FAKE_ROOT).exists())
         self.assertFalse(self.s.service_path(FAKE_ROOT).exists())
 
     def test_install_minutes_and_account(self):
-        with mock.patch('schedulers._run',return_value=OK):
+        with mock.patch('hb_engine.schedulers._run',return_value=OK):
             self.s.install(FAKE_ROOT,'work','minutes',15)
         service=self.s.service_path(FAKE_ROOT).read_text()
         self.assertIn('OnUnitActiveSec=15min',self.s.timer_path(FAKE_ROOT).read_text())
         self.assertIn(' run work',service)
 
     def test_install_default_interval_is_daily(self):
-        with mock.patch('schedulers._run',return_value=OK):
+        with mock.patch('hb_engine.schedulers._run',return_value=OK):
             self.s.install(FAKE_ROOT)
         self.assertIn('OnCalendar=daily',self.s.timer_path(FAKE_ROOT).read_text())
 
     def test_uninstall_removes_units(self):
-        with mock.patch('schedulers._run',return_value=OK):
+        with mock.patch('hb_engine.schedulers._run',return_value=OK):
             self.s.install(FAKE_ROOT)
             self.s.uninstall(FAKE_ROOT)
         self.assertFalse(self.s.timer_path(FAKE_ROOT).exists())
@@ -88,7 +88,7 @@ class SystemdTests(unittest.TestCase):
         return parser
 
     def test_units_are_structurally_valid(self):
-        with mock.patch('schedulers._run',return_value=OK):
+        with mock.patch('hb_engine.schedulers._run',return_value=OK):
             self.s.install(FAKE_ROOT,None,'daily',None,'06:30')
         timer=self._sections(self.s.timer_path(FAKE_ROOT))
         service=self._sections(self.s.service_path(FAKE_ROOT))
@@ -101,7 +101,7 @@ class SystemdTests(unittest.TestCase):
         self.assertIn('tick',service['Service']['ExecStart'])
 
     def test_units_are_structurally_valid_for_interval(self):
-        with mock.patch('schedulers._run',return_value=OK):
+        with mock.patch('hb_engine.schedulers._run',return_value=OK):
             self.s.install(FAKE_ROOT,None,'minutes',15)
         timer=self._sections(self.s.timer_path(FAKE_ROOT))
         self.assertEqual(timer['Timer']['OnUnitActiveSec'],'15min')
@@ -112,7 +112,7 @@ class SystemdTests(unittest.TestCase):
             if 'enable' in args:
                 raise SchedulerError('systemctl exited 1: Unit has a bad unit file setting')
             return OK
-        with mock.patch('schedulers._run',side_effect=run):
+        with mock.patch('hb_engine.schedulers._run',side_effect=run):
             with self.assertRaises(SchedulerError) as caught:
                 self.s.install(FAKE_ROOT)
         self.assertIn('rejected',str(caught.exception))
@@ -123,16 +123,16 @@ class SystemdTests(unittest.TestCase):
         wants=self.s._wants_link(FAKE_ROOT)
         wants.parent.mkdir(parents=True,exist_ok=True)
         wants.write_text('')
-        with mock.patch('schedulers._run',return_value=OK):
+        with mock.patch('hb_engine.schedulers._run',return_value=OK):
             self.s.uninstall(FAKE_ROOT)
         self.assertFalse(wants.exists())
 
     def test_status(self):
         self.assertEqual(self.s.status(FAKE_ROOT),'Not installed')
-        with mock.patch('schedulers._run',return_value=OK):
+        with mock.patch('hb_engine.schedulers._run',return_value=OK):
             self.s.install(FAKE_ROOT)
         result=mock.Mock(returncode=0,stdout=b'active\n',stderr=b'')
-        with mock.patch('schedulers._run',return_value=result):
+        with mock.patch('hb_engine.schedulers._run',return_value=result):
             self.assertEqual(self.s.status(FAKE_ROOT),'active')
 
 @unittest.skipUnless(hasattr(os,'getuid'),'launchd is a POSIX-only scheduler')
@@ -144,7 +144,7 @@ class LaunchdTests(unittest.TestCase):
 
     def test_install_writes_plist(self):
         import plistlib
-        with mock.patch('schedulers._run'):
+        with mock.patch('hb_engine.schedulers._run'):
             path=self.s.install(FAKE_ROOT)
         data=plistlib.loads(Path(path).read_bytes())
         self.assertEqual(data['StartInterval'],60)
@@ -154,35 +154,35 @@ class LaunchdTests(unittest.TestCase):
 
     def test_install_honours_every_and_at(self):
         import plistlib
-        with mock.patch('schedulers._run'):
+        with mock.patch('hb_engine.schedulers._run'):
             data=plistlib.loads(Path(self.s.install(FAKE_ROOT,None,'minutes',30)).read_bytes())
         self.assertEqual(data['StartInterval'],1800)
-        with mock.patch('schedulers._run'):
+        with mock.patch('hb_engine.schedulers._run'):
             other=LaunchdScheduler(self.home)
             other.path(FAKE_ROOT).unlink(missing_ok=True)
             data=plistlib.loads(Path(other.install(FAKE_ROOT,None,'daily',None,'05:15')).read_bytes())
         self.assertEqual(data['StartCalendarInterval'],{'Hour':5,'Minute':15})
 
     def test_install_refuses_existing_agent(self):
-        with mock.patch('schedulers._run'):
+        with mock.patch('hb_engine.schedulers._run'):
             self.s.install(FAKE_ROOT)
-        with mock.patch('schedulers._run'):
+        with mock.patch('hb_engine.schedulers._run'):
             with self.assertRaises(SchedulerError):
                 self.s.install(FAKE_ROOT)
 
     def test_install_cleans_up_on_bootstrap_failure(self):
-        with mock.patch('schedulers._run',side_effect=SchedulerError('boom')):
+        with mock.patch('hb_engine.schedulers._run',side_effect=SchedulerError('boom')):
             with self.assertRaises(SchedulerError):
                 self.s.install(FAKE_ROOT)
         self.assertFalse(self.s.path(FAKE_ROOT).exists())
 
     def test_uninstall_waits_for_launchd_to_drop_the_agent(self):
-        with mock.patch('schedulers._run'):
+        with mock.patch('hb_engine.schedulers._run'):
             self.s.install(FAKE_ROOT)
         with mock.patch.object(self.s,'status',
                                side_effect=['Loaded','Loaded','Not installed']) as status:
-            with mock.patch('schedulers.time.sleep') as sleep:
-                with mock.patch('schedulers._run') as run:
+            with mock.patch('hb_engine.schedulers.time.sleep') as sleep:
+                with mock.patch('hb_engine.schedulers._run') as run:
                     self.s.uninstall(FAKE_ROOT)
         self.assertIn('bootout',run.call_args.args[0])
         self.assertGreaterEqual(status.call_count,3)
@@ -193,7 +193,7 @@ class SchtasksTests(unittest.TestCase):
     def setUp(self):
         self.s=SchtasksScheduler()
     def test_install_daily(self):
-        with mock.patch('schedulers._run') as run:
+        with mock.patch('hb_engine.schedulers._run') as run:
             self.s.install(FAKE_ROOT,None,'daily',None,'07:45')
         args=run.call_args.args[0]
         self.assertEqual(args[0],'schtasks')
@@ -204,7 +204,7 @@ class SchtasksTests(unittest.TestCase):
         self.assertFalse(any(PASSWORD in a for a in args))
 
     def test_install_minutes(self):
-        with mock.patch('schedulers._run') as run:
+        with mock.patch('hb_engine.schedulers._run') as run:
             self.s.install(FAKE_ROOT,'work','minutes',20)
         args=run.call_args.args[0]
         self.assertEqual(args[args.index('/SC')+1],'MINUTE')
@@ -212,12 +212,12 @@ class SchtasksTests(unittest.TestCase):
 
     def test_status_and_uninstall(self):
         not_found=mock.Mock(returncode=1,stdout=b'',stderr=b'')
-        with mock.patch('schedulers._run',return_value=not_found):
+        with mock.patch('hb_engine.schedulers._run',return_value=not_found):
             self.assertEqual(self.s.status(FAKE_ROOT),'Not installed')
         ready=mock.Mock(returncode=0,stdout=b'TaskName  Status\n==  Ready\n',stderr=b'')
-        with mock.patch('schedulers._run',return_value=ready):
+        with mock.patch('hb_engine.schedulers._run',return_value=ready):
             self.assertEqual(self.s.status(FAKE_ROOT),'Ready')
-        with mock.patch('schedulers._run') as run:
+        with mock.patch('hb_engine.schedulers._run') as run:
             self.s.uninstall(FAKE_ROOT)
         self.assertIn('/Delete',run.call_args.args[0])
 
