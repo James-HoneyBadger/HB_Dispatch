@@ -58,6 +58,7 @@ the release was qualified, not what it contains.
 | Incremental IMAP synchronization via a UID watermark | `incremental-sync` | Implemented | `tests/test_dispatch.py` |
 | Per-folder IMAP state with coverage counts and UIDVALIDITY reset | `folder-coverage` | Implemented | `tests/test_dispatch.py` |
 | Mailbox discovery and multi-folder runs | `mailbox-discovery` | Implemented | `tests/test_dispatch.py` |
+| IMAP provider presets with sign-in guidance | `imap-presets` | Implemented | `tests/test_imap_profiles.py` |
 | Attachment-name and attachment-type search filters | `attachment-filters` | Not yet committed | No code in the tag |
 | Recipient-header indexing and duplicate report | `recipient-index` | Not yet committed | No code in the tag |
 | OAuth mail authentication | `oauth` | Not yet committed | No code in the tag |
