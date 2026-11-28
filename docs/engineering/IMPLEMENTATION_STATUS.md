@@ -54,6 +54,8 @@ the release was qualified, not what it contains.
 | Live model output from Ollama | `live-ollama` | Experimental (flag-gated) | Requires `ai.enabled` and a loopback server; not exercised in CI |
 | MBOX import with reconstruction provenance | `mbox-import` | Implemented | `tests/test_mbox.py` |
 | MBOX preview: counts, date range, duplicates, problems | `mbox-preview` | Implemented | `tests/test_mbox.py` |
+| Verified pre-migration snapshot of each database | `migration-snapshot` | Implemented | `tests/test_migrations.py` |
+| Full-archive pre-migration snapshot via backup.py | `archive-snapshot-on-upgrade` | Not yet committed | No code in the tag |
 | MBOX export with manifest and overwrite protection | `mbox-export` | Implemented | `tests/test_mbox.py` |
 | Incremental IMAP synchronization via a UID watermark | `incremental-sync` | Implemented | `tests/test_dispatch.py` |
 | Per-folder IMAP state with coverage counts and UIDVALIDITY reset | `folder-coverage` | Implemented | `tests/test_dispatch.py` |
