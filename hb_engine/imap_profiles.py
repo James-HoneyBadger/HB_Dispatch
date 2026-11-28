@@ -56,9 +56,9 @@ PRESETS: tuple[ImapPreset, ...] = (
         host='imap.fastmail.com',
         port=993,
         encryption='TLS',
-        guidance='App passwords are recommended; create one in Settings, '
-                 'Privacy and Security. Some accounts also allow the main '
-                 'password if app passwords are disabled.',
+        guidance='An app password with mail access is required; create one in '
+                 'Settings, Privacy and Security. The normal account password is '
+                 'rejected for IMAP, and Basic plans do not support IMAP at all.',
         aliases=(),
     ),
     ImapPreset(
@@ -77,10 +77,11 @@ PRESETS: tuple[ImapPreset, ...] = (
         host='outlook.office365.com',
         port=993,
         encryption='TLS',
-        guidance='Personal accounts need an app password with two-step '
-                 'verification. Many Microsoft 365 tenants disable basic '
-                 'authentication entirely; in that case only OAuth works and '
-                 'IMAP with a password will fail.',
+        guidance='OAuth2 is required. Personal Outlook.com accounts no longer '
+                 'accept password or app-password IMAP logins, and many '
+                 'Microsoft 365 tenants disable basic authentication entirely. '
+                 'This engine has no OAuth support yet, so these accounts cannot '
+                 'synchronize until it is added.',
         aliases=('microsoft', 'm365', 'office365', 'hotmail', 'live'),
     ),
     ImapPreset(

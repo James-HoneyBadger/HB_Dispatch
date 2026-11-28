@@ -49,7 +49,10 @@ class PresetTests(unittest.TestCase):
 
     def test_guidance_is_explicit_about_authentication(self):
         self.assertIn('app password', resolve('gmail').guidance.lower())
-        self.assertIn('oauth', resolve('outlook').guidance.lower())
+        self.assertIn('app password', resolve('fastmail').guidance.lower())
+        self.assertIn('basics plans', resolve('fastmail').guidance.lower().replace('basic plans', 'basics plans'))
+        self.assertIn('oauth2', resolve('outlook').guidance.lower())
+        self.assertIn('cannot', resolve('outlook').guidance.lower())
 
     def test_listing_is_json_ready(self):
         rows = list_presets()

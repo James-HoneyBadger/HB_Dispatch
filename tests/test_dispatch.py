@@ -247,6 +247,18 @@ class _StubDatabase:
         return None
 
 
+class PresetCliTests(unittest.TestCase):
+    def test_imap_presets_needs_no_archive_and_creates_nothing(self):
+        import tempfile
+        from hb_engine import dispatch as dispatch_module
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'missing-archive'
+            with mock.patch('sys.stdout'):
+                code = dispatch_module.main(['--archive', str(root), 'imap-presets'])
+            self.assertEqual(code, 0)
+            self.assertFalse(root.exists())
+
+
 class StubArchive:
     """Stands in for Archive in CLI tests so no database handle is opened."""
     report = None

@@ -1132,6 +1132,10 @@ def main(argv=None):
     sub.add_parser('init-encrypted'); sub.add_parser('encryption-status')
     q=sub.add_parser('migrate-encrypted'); q.add_argument('--destination',required=True); q.add_argument('--backup',required=True)
     a=p.parse_args(argv)
+    if a.cmd=='imap-presets':
+        # Reference data: no archive is opened, unlocked or created.
+        from .imap_profiles import list_presets
+        print(json.dumps(list_presets(),indent=2)); return 0
     from . import encryption
     from .db import EncryptionUnavailable, session_key
     root=Path(a.archive).expanduser().resolve()
@@ -1239,9 +1243,6 @@ def main(argv=None):
             print(f'mbox: {exc}',file=sys.stderr); return 1
         print(json.dumps(result,indent=2))
         return 0 if not result['failed'] else 1
-    elif a.cmd=='imap-presets':
-        from .imap_profiles import list_presets
-        print(json.dumps(list_presets(),indent=2)); return 0
     elif a.cmd=='capabilities':
         print(json.dumps(capabilities(),indent=2)); return 0
     elif a.cmd=='health':
