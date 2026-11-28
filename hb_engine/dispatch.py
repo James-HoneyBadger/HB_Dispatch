@@ -984,6 +984,23 @@ class Archive:
         return row[0] if row and row[0] is not None else None
 
     def _sync(self, host, user, password, folder):
+        account=host+'|'+user
+        progress={'last_uid':0, 'count':0}
+        checkpoint=self._begin_checkpoint(account,folder)
+        try:
+            return self._sync_mailbox(host,user,password,folder,account,
+                                      checkpoint,progress)
+        except BaseException:
+            # Connection, login, SELECT and UIDVALIDITY failures happen before
+            # any fetch, so they must still close the checkpoint they opened.
+            self._finish_checkpoint(checkpoint,status='error',
+                                    last_uid=progress['last_uid'],
+                                    new=progress['count'],
+                                    detail='setup or fetch failed')
+            raise
+
+    def _sync_mailbox(self, host, user, password, folder, account, checkpoint,
+                      progress):
         if folder.startswith('"') and folder.endswith('"'):
             folder=folder[1:-1]
         if not folder or any(c in folder for c in '\r\n\x00'):
@@ -1004,8 +1021,6 @@ class Archive:
             resp=m.response('UIDVALIDITY')[1]
             if not resp or resp[0] is None or not resp[0].decode().isdigit(): raise RuntimeError('Missing UIDVALIDITY')
             validity=resp[0].decode()
-            account=host+'|'+user
-            checkpoint=self._begin_checkpoint(account,folder)
             state=self._folder_state(account,folder)
             if state and state['uidvalidity'] not in (None,validity):
                 logging.getLogger(__name__).warning(
@@ -1038,15 +1053,14 @@ class Archive:
                     if len(payload)!=1: raise RuntimeError('Unexpected fetch response')
                     self._ingest(payload[0],origin); count+=1
                     last_uid=max(last_uid,uid_value)
+                    progress['last_uid']=last_uid
+                    progress['count']=count
                     if prefs['batch_limit'] and count>=prefs['batch_limit']: break
             except BaseException:
                 # Includes KeyboardInterrupt: an interrupted sync must leave a
                 # resumable checkpoint rather than the previous watermark.
                 self._save_folder_state(account,folder,validity,last_uid,
                                         remote_count,status='error')
-                self._finish_checkpoint(checkpoint,status='error',
-                                        last_uid=last_uid,new=count,
-                                        detail='interrupted or failed')
                 raise
             self._save_folder_state(account,folder,validity,last_uid,
                                     remote_count,status='ok')

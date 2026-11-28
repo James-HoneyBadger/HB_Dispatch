@@ -492,3 +492,24 @@ class SyncCheckpointTests(unittest.TestCase):
             self.a.sync('host','user','pw')
             self.a.sync('host','user','pw')
         self.assertEqual(len(self.rows()),2)
+
+    def test_setup_failure_still_closes_the_checkpoint(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.login.side_effect=RuntimeError('login refused')
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            with self.assertRaises(RuntimeError):
+                self.a.sync('host','user','pw')
+        status,finished=self.a.db.execute(
+            'SELECT status, finished_at FROM sync_checkpoints').fetchone()
+        self.assertEqual(status,'error')
+        self.assertIsNotNone(finished)
+
+    def test_mid_fetch_failure_records_the_last_ingested_uid(self):
+        m=self.server([('OK',[b'1 2']),('OK',[(b'1',RAW)]),('NO',[])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            with self.assertRaises(RuntimeError):
+                self.a.sync('host','user','pw')
+        status,last,new=self.a.db.execute(
+            'SELECT status, last_seen_uid, messages_new FROM sync_checkpoints'
+        ).fetchone()
+        self.assertEqual((status,last,new),('error',1,1))
