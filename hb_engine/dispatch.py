@@ -1010,10 +1010,11 @@ class Archive:
         from .preferences import load
         prefs=load(self.root)
         with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=prefs['network_timeout']) as m:
-            if oauth_token:
-                from .oauth_local import xoauth2_string
-                payload=xoauth2_string(user,oauth_token)
-                m.authenticate('XOAUTH2',lambda _: payload.encode('ascii'))
+            if oauth_token is not None:
+                # An empty token must fail here rather than fall back to LOGIN.
+                from .oauth_local import xoauth2_bytes
+                payload=xoauth2_bytes(user,oauth_token)
+                m.authenticate('XOAUTH2',lambda _: payload)
             else:
                 m.login(user,password)
             selected=m.select(quoted,readonly=True)

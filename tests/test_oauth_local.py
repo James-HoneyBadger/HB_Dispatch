@@ -124,6 +124,13 @@ class LoopbackTests(unittest.TestCase):
             self.assertTrue(server.redirect_uri.startswith('http://127.0.0.1:'))
             self.assertTrue(server.redirect_uri.endswith('/callback'))
 
+    def test_microsoft_uses_the_localhost_uri_form(self):
+        # Entra ID ignores the port only for the "localhost" host name.
+        with oauth.LoopbackServer('s', uri_host='localhost') as server:
+            self.assertTrue(server.redirect_uri.startswith('http://localhost:'))
+            self.assertTrue(server.redirect_uri.endswith('/callback'))
+        self.assertEqual(oauth.provider_config('outlook')['redirect_host'], 'localhost')
+
 
 class LoginTests(unittest.TestCase):
     def test_empty_client_id_is_rejected(self):
@@ -142,9 +149,29 @@ class LoginTests(unittest.TestCase):
         exchange.assert_called_once()
 
 
+class _OsBackend:
+    pass
+
+
+_OsBackend.__module__ = 'keyring.backends.macOS'
+
+
 class KeyringStorageTests(unittest.TestCase):
+    def test_a_non_os_backend_is_refused(self):
+        class PlaintextFileKeyring:
+            pass
+        PlaintextFileKeyring.__module__ = 'keyrings.alt.file'
+        fake = mock.MagicMock()
+        fake.get_keyring.return_value = PlaintextFileKeyring()
+        with mock.patch.dict('sys.modules', {'keyring': fake}):
+            with self.assertRaises(oauth.KeyringUnavailable) as caught:
+                oauth.store_refresh_token('user@example.invalid', 'rt')
+        self.assertIn('not an operating-system', str(caught.exception))
+        fake.set_password.assert_not_called()
+
     def test_token_is_stored_under_a_prefixed_account(self):
         fake = mock.MagicMock()
+        fake.get_keyring.return_value = _OsBackend()
         with mock.patch.dict('sys.modules', {'keyring': fake}):
             oauth.store_refresh_token('user@example.invalid', 'rt-1')
         fake.set_password.assert_called_once_with(
@@ -158,6 +185,7 @@ class KeyringStorageTests(unittest.TestCase):
 
     def test_absent_token_is_an_error_not_a_fallback(self):
         fake = mock.MagicMock()
+        fake.get_keyring.return_value = _OsBackend()
         fake.get_password.return_value = None
         with mock.patch.dict('sys.modules', {'keyring': fake}):
             with self.assertRaises(oauth.OAuthError):
@@ -190,5 +218,20 @@ class XOAuth2SyncTests(unittest.TestCase):
         m.login.assert_not_called()
         method, callback = m.authenticate.call_args[0]
         self.assertEqual(method, 'XOAUTH2')
-        self.assertEqual(base64.b64decode(callback(None)).decode(),
-                         'user=user@example.invalid\x01auth=Bearer tok\x01\x01')
+        self.assertEqual(callback(None),
+                         b'user=user@example.invalid\x01auth=Bearer tok\x01\x01')
+
+    def test_explicit_empty_token_fails_closed_instead_of_logging_in(self):
+        import tempfile
+        from pathlib import Path as _Path
+        from hb_engine.dispatch import Archive
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Archive(_Path(tmp) / 'archive')
+            m = mock.MagicMock(); m.__enter__.return_value = m
+            try:
+                with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL', return_value=m):
+                    with self.assertRaises(oauth.OAuthError):
+                        archive.sync('host', 'user@example.invalid', 'pw', oauth_token='')
+            finally:
+                archive.db.close()
+        m.login.assert_not_called()

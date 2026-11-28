@@ -35,6 +35,8 @@ PROVIDERS = {
         'token': 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
         'scope': 'https://outlook.office.com/IMAP.AccessAsUser.All offline_access',
         'host': 'outlook.office365.com',
+        # Entra ID ignores the port only for the "localhost" host name.
+        'redirect_host': 'localhost',
     },
 }
 
@@ -83,12 +85,20 @@ def authorize_url(config: dict, client_id: str, redirect_uri: str, state: str,
     return f"{config['authorize']}?{query}"
 
 
-def xoauth2_string(user: str, access_token: str) -> str:
-    """The SASL payload an IMAP server expects for AUTHENTICATE XOAUTH2."""
+def xoauth2_bytes(user: str, access_token: str) -> bytes:
+    """Raw SASL payload for AUTHENTICATE XOAUTH2.
+
+    imaplib.authenticate() base64-encodes whatever the callback returns, so this
+    must stay unencoded.
+    """
     if not user or not access_token:
         raise OAuthError('user and access token are required')
-    raw = f'user={user}\x01auth=Bearer {access_token}\x01\x01'.encode('utf-8')
-    return base64.b64encode(raw).decode('ascii')
+    return f'user={user}\x01auth=Bearer {access_token}\x01\x01'.encode('utf-8')
+
+
+def xoauth2_string(user: str, access_token: str) -> str:
+    """Base64 SASL payload, for callers that feed the wire themselves."""
+    return base64.b64encode(xoauth2_bytes(user, access_token)).decode('ascii')
 
 
 def _post_form(url: str, fields: dict, opener=None) -> dict:
@@ -148,6 +158,14 @@ class _CallbackServer(http.server.HTTPServer):
 
 class _CallbackHandler(http.server.BaseHTTPRequestHandler):
     server_version = 'HBCallback/1.0'
+    timeout = 10
+
+    def setup(self):
+        super().setup()
+        try:
+            self.connection.settimeout(self.timeout)
+        except OSError:
+            pass
 
     def log_message(self, *args):  # keep the console quiet
         return
@@ -181,8 +199,9 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
 class LoopbackServer:
     """A one-shot loopback listener for the OAuth redirect."""
 
-    def __init__(self, state: str):
+    def __init__(self, state: str, uri_host: str = '127.0.0.1'):
         self.state = state
+        self.uri_host = uri_host
         self.event = threading.Event()
         self.code = ''
         self.error = ''
@@ -196,7 +215,7 @@ class LoopbackServer:
 
     @property
     def redirect_uri(self) -> str:
-        return f'http://127.0.0.1:{self.port}/callback'
+        return f'http://{self.uri_host}:{self.port}/callback'
 
     def __enter__(self):
         self.thread.start()
@@ -223,7 +242,7 @@ def login(provider: str, client_id: str, *, open_browser=True,
     config = provider_config(provider)
     verifier, challenge = pkce_pair()
     state = _b64url(secrets.token_bytes(16))
-    with LoopbackServer(state) as server:
+    with LoopbackServer(state, uri_host=config.get('redirect_host', '127.0.0.1')) as server:
         url = authorize_url(config, client_id, server.redirect_uri, state, challenge)
         if open_browser:
             webbrowser.open(url)
@@ -241,16 +260,32 @@ class KeyringUnavailable(OAuthError):
     """No OS credential store is available for the refresh token."""
 
 
+_OS_BACKEND_MODULES = ('keyring.backends.macOS', 'keyring.backends.Windows',
+                       'keyring.backends.SecretService', 'keyring.backends.kwallet')
+
+
 def _keyring():
     try:
         import keyring
-        return keyring
     except Exception:
         raise KeyringUnavailable(
             'OAuth refresh tokens are stored only in the OS credential store, and '
             'the "keyring" package is not installed. Install it (Linux also needs '
             'a Secret Service provider such as gnome-keyring) or keep using an '
             'app password.') from None
+    try:
+        backend = keyring.get_keyring()
+    except Exception as exc:
+        raise KeyringUnavailable(
+            f'the credential store backend could not be selected: {exc}') from None
+    module = type(backend).__module__
+    if not module.startswith(_OS_BACKEND_MODULES):
+        raise KeyringUnavailable(
+            'the configured keyring backend is not an operating-system credential '
+            f'store ({module}.{type(backend).__name__}). Tokens are never written '
+            'to plain files: uninstall the keyrings.alt plaintext backend or '
+            'configure a system backend before using OAuth.')
+    return keyring
 
 
 def _account_key(account: str) -> str:

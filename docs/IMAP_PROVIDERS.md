@@ -54,12 +54,16 @@ python3 dispatch.py oauth-login google    you@example.com --client-id <client-id
 How it works: a short-lived server binds to `127.0.0.1` on an ephemeral port,
 your browser performs the consent, and the authorization code is exchanged with
 PKCE (S256). No client secret is used, because a desktop application cannot keep
-one. The refresh token is written **only** to the OS credential store; if the
-`keyring` package is missing the command fails with an explanation instead of
-saving a token somewhere else.
+one. The refresh token is written **only** to an operating-system credential
+store. If the `keyring` package is missing, or if its selected backend is a file
+backend such as `keyrings.alt` (which writes plaintext), the command refuses with
+an explanation instead of saving the token somewhere less protected.
 
-Registration hints: for Google use a "Desktop app" OAuth client; for Microsoft
-use a public/native client with `http://127.0.0.1` as a loopback redirect. Then
+Registration hints: for Google use a "Desktop app" OAuth client and register
+`http://127.0.0.1/callback` (Google allows any loopback port). For Microsoft use
+a public/native client and register `http://localhost/callback` — Entra ID
+ignores the port only for the `localhost` host name, never for `127.0.0.1`, so
+the flow uses that spelling for Microsoft. Then
 pass the access token to synchronization through the engine API
 (`Archive.sync(..., oauth_token=...)`), which authenticates with `XOAUTH2`
 rather than `LOGIN`.
