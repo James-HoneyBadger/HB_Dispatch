@@ -872,14 +872,14 @@ class Archive:
     def stats(self):
         return {'messages':self.db.execute('SELECT count(*) FROM messages').fetchone()[0],
                 'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0]}
-    def sync(self, host, user, password, folder='INBOX'):
+    def sync(self, host, user, password, folder='INBOX', oauth_token=None):
         from .sync_lock import sync_lock
         if not self.source_enabled('email', f'{host}|{user}'):
             raise ValueError('Source is disabled; enable it before synchronizing')
         with sync_lock(self.root):
             run=self.begin_import_run('imap', f'{host}|{user}|{folder}')
             try:
-                count=self._sync(host, user, password, folder)
+                count=self._sync(host, user, password, folder, oauth_token=oauth_token)
             except Exception as exc:
                 self.finish_import_run(run,'error',detail=type(exc).__name__)
                 raise
@@ -983,13 +983,13 @@ class Archive:
             (account,folder,quoted,validity)).fetchone()
         return row[0] if row and row[0] is not None else None
 
-    def _sync(self, host, user, password, folder):
+    def _sync(self, host, user, password, folder, oauth_token=None):
         account=host+'|'+user
         progress={'last_uid':0, 'count':0}
         checkpoint=self._begin_checkpoint(account,folder)
         try:
             return self._sync_mailbox(host,user,password,folder,account,
-                                      checkpoint,progress)
+                                      checkpoint,progress,oauth_token=oauth_token)
         except BaseException:
             # Connection, login, SELECT and UIDVALIDITY failures happen before
             # any fetch, so they must still close the checkpoint they opened.
@@ -1000,7 +1000,7 @@ class Archive:
             raise
 
     def _sync_mailbox(self, host, user, password, folder, account, checkpoint,
-                      progress):
+                      progress, oauth_token=None):
         if folder.startswith('"') and folder.endswith('"'):
             folder=folder[1:-1]
         if not folder or any(c in folder for c in '\r\n\x00'):
@@ -1010,7 +1010,13 @@ class Archive:
         from .preferences import load
         prefs=load(self.root)
         with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=prefs['network_timeout']) as m:
-            m.login(user,password)
+            if oauth_token is not None:
+                # An empty token must fail here rather than fall back to LOGIN.
+                from .oauth_local import xoauth2_bytes
+                payload=xoauth2_bytes(user,oauth_token)
+                m.authenticate('XOAUTH2',lambda _: payload)
+            else:
+                m.login(user,password)
             selected=m.select(quoted,readonly=True)
             if selected[0]!='OK': raise RuntimeError('Select failed')
             remote_count=None
@@ -1165,10 +1171,21 @@ def capabilities():
 def main(argv=None):
     import atexit, getpass, sys
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); q.add_argument('--all-folders',action='store_true'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); fb.add_parser('verify'); fb.add_parser('reindex'); q=sub.add_parser('documents'); dc=q.add_subparsers(dest='dcmd',required=True); dp=dc.add_parser('preview'); dp.add_argument('paths',nargs='+'); di=dc.add_parser('import'); di.add_argument('paths',nargs='+'); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook,document'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('capabilities'); sub.add_parser('imap-presets'); q=sub.add_parser('mbox'); mc=q.add_subparsers(dest='mcmd',required=True); mp=mc.add_parser('preview'); mp.add_argument('path'); mi=mc.add_parser('import'); mi.add_argument('path'); me=mc.add_parser('export'); me.add_argument('destination'); me.add_argument('--hash',action='append',default=[]); me.add_argument('--account'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); q.add_argument('--all-folders',action='store_true'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); fb.add_parser('verify'); fb.add_parser('reindex'); q=sub.add_parser('documents'); dc=q.add_subparsers(dest='dcmd',required=True); dp=dc.add_parser('preview'); dp.add_argument('paths',nargs='+'); di=dc.add_parser('import'); di.add_argument('paths',nargs='+'); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook,document'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('capabilities'); sub.add_parser('imap-presets'); q=sub.add_parser('oauth-login'); q.add_argument('provider'); q.add_argument('user'); q.add_argument('--client-id',required=True); q=sub.add_parser('mbox'); mc=q.add_subparsers(dest='mcmd',required=True); mp=mc.add_parser('preview'); mp.add_argument('path'); mi=mc.add_parser('import'); mi.add_argument('path'); me=mc.add_parser('export'); me.add_argument('destination'); me.add_argument('--hash',action='append',default=[]); me.add_argument('--account'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
     sub.add_parser('init-encrypted'); sub.add_parser('encryption-status')
     q=sub.add_parser('migrate-encrypted'); q.add_argument('--destination',required=True); q.add_argument('--backup',required=True)
     a=p.parse_args(argv)
+    if a.cmd=='oauth-login':
+        from .oauth_local import OAuthError, login, store_refresh_token
+        try:
+            tokens=login(a.provider,a.client_id)
+            stored=False
+            if tokens.get('refresh_token'):
+                store_refresh_token(a.user,tokens['refresh_token']); stored=True
+            print(json.dumps({'provider':tokens.get('provider'),
+                              'stored_refresh_token':stored},indent=2)); return 0
+        except OAuthError as exc:
+            print(f'oauth-login: {exc}',file=sys.stderr); return 1
     if a.cmd=='imap-presets':
         # Reference data: no archive is opened, unlocked or created.
         from .imap_profiles import list_presets
