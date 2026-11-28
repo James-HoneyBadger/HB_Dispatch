@@ -917,6 +917,23 @@ class Archive:
             result['imported']+=count
         return result
 
+    def _begin_checkpoint(self, account, folder):
+        with self.db:
+            cursor=self.db.execute(
+                'INSERT INTO sync_checkpoints(account_id, folder_name, started_at, '
+                'status) VALUES(?,?,?,\'running\')',
+                (account, folder, _now_utc()))
+        return cursor.lastrowid
+
+    def _finish_checkpoint(self, checkpoint_id, status, last_uid, new,
+                           detail=None):
+        with self.db:
+            self.db.execute(
+                'UPDATE sync_checkpoints SET finished_at=?, status=?, '
+                'last_seen_uid=?, messages_new=?, detail=? WHERE id=?',
+                (_now_utc(), status, int(last_uid or 0), int(new or 0),
+                 detail, checkpoint_id))
+
     def _folder_state(self, account, folder):
         row=self.db.execute(
             'SELECT uidvalidity, last_seen_uid FROM imap_folder_state '
@@ -988,6 +1005,7 @@ class Archive:
             if not resp or resp[0] is None or not resp[0].decode().isdigit(): raise RuntimeError('Missing UIDVALIDITY')
             validity=resp[0].decode()
             account=host+'|'+user
+            checkpoint=self._begin_checkpoint(account,folder)
             state=self._folder_state(account,folder)
             if state and state['uidvalidity'] not in (None,validity):
                 logging.getLogger(__name__).warning(
@@ -1026,9 +1044,14 @@ class Archive:
                 # resumable checkpoint rather than the previous watermark.
                 self._save_folder_state(account,folder,validity,last_uid,
                                         remote_count,status='error')
+                self._finish_checkpoint(checkpoint,status='error',
+                                        last_uid=last_uid,new=count,
+                                        detail='interrupted or failed')
                 raise
             self._save_folder_state(account,folder,validity,last_uid,
                                     remote_count,status='ok')
+            self._finish_checkpoint(checkpoint,status='ok',last_uid=last_uid,
+                                    new=count)
             return count
 
 def _now_utc():

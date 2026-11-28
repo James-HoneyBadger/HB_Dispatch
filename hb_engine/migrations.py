@@ -140,6 +140,16 @@ ARCHIVE_V7 = (
     'ON imap_folder_state(account_id)',
 )
 
+ARCHIVE_V8 = (
+    'CREATE TABLE IF NOT EXISTS sync_checkpoints('
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL, '
+    'folder_name TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, '
+    'status TEXT NOT NULL, last_seen_uid INTEGER, messages_seen INTEGER, '
+    'messages_new INTEGER, messages_failed INTEGER, detail TEXT)',
+    'CREATE INDEX IF NOT EXISTS sync_checkpoints_by_folder '
+    'ON sync_checkpoints(account_id, folder_name, id DESC)',
+)
+
 RESEARCH_V1 = (
     'CREATE TABLE IF NOT EXISTS workspaces('
     'name TEXT PRIMARY KEY, description TEXT NOT NULL)',
@@ -307,7 +317,8 @@ RESEARCH_V6 = (
 
 MIGRATIONS = {
     'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4,
-                5: ARCHIVE_V5, 6: ARCHIVE_V6, 7: ARCHIVE_V7},
+                5: ARCHIVE_V5, 6: ARCHIVE_V6, 7: ARCHIVE_V7,
+                8: ARCHIVE_V8},
     'research': {1: RESEARCH_V1, 2: RESEARCH_V2, 3: RESEARCH_V3, 4: RESEARCH_V4,
                  5: RESEARCH_V5, 6: RESEARCH_V6},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3, 4: CATALOG_V4,
