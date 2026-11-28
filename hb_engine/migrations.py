@@ -150,6 +150,25 @@ ARCHIVE_V8 = (
     'ON sync_checkpoints(account_id, folder_name, id DESC)',
 )
 
+ARCHIVE_V9 = (
+    'CREATE TABLE IF NOT EXISTS entities('
+    'entity_id INTEGER PRIMARY KEY AUTOINCREMENT, canonical_name TEXT NOT NULL, '
+    'entity_type TEXT NOT NULL, notes TEXT, created_at TEXT NOT NULL, '
+    'UNIQUE(canonical_name, entity_type))',
+    'CREATE TABLE IF NOT EXISTS entity_aliases('
+    'alias_id INTEGER PRIMARY KEY AUTOINCREMENT, entity_id INTEGER NOT NULL '
+    'REFERENCES entities(entity_id), alias_value TEXT NOT NULL, '
+    'alias_type TEXT NOT NULL, confidence TEXT NOT NULL, '
+    'UNIQUE(alias_value, alias_type))',
+    'CREATE TABLE IF NOT EXISTS entity_mentions('
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, entity_id INTEGER NOT NULL '
+    'REFERENCES entities(entity_id), source_type TEXT NOT NULL, '
+    'record_id TEXT NOT NULL, role TEXT NOT NULL, timestamp INTEGER, '
+    'UNIQUE(entity_id, source_type, record_id, role))',
+    'CREATE INDEX IF NOT EXISTS entity_mentions_by_entity '
+    'ON entity_mentions(entity_id, timestamp)',
+)
+
 RESEARCH_V1 = (
     'CREATE TABLE IF NOT EXISTS workspaces('
     'name TEXT PRIMARY KEY, description TEXT NOT NULL)',
@@ -318,7 +337,8 @@ RESEARCH_V6 = (
 MIGRATIONS = {
     'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4,
                 5: ARCHIVE_V5, 6: ARCHIVE_V6, 7: ARCHIVE_V7,
-                8: ARCHIVE_V8},
+                8: ARCHIVE_V8,
+                9: ARCHIVE_V9},
     'research': {1: RESEARCH_V1, 2: RESEARCH_V2, 3: RESEARCH_V3, 4: RESEARCH_V4,
                  5: RESEARCH_V5, 6: RESEARCH_V6},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3, 4: CATALOG_V4,
