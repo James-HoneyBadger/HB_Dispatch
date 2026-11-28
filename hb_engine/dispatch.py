@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from .db import connect as db_connect
 from pathlib import Path
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 def valid_hash(value):
     return isinstance(value,str) and len(value)==64 and all(c in '0123456789abcdef' for c in value)

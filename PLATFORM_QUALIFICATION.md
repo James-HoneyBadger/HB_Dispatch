@@ -3,7 +3,7 @@
 What has actually been run, on what hardware, and what has not. Nothing here
 is inferred from a passing build on another platform.
 
-## Current status for `v1.0.0`
+## Current status for `v1.1.0`
 
 | Platform | Engine (Python) | Desktop shell | Status |
 | --- | --- | --- | --- |

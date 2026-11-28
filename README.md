@@ -17,25 +17,23 @@ maintained responsibly.
 
 ## Status
 
-**Current release: [v1.0.0](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v1.0.0).**
-This is a stable source release for personal use, published without a signed
-or notarized installer. The native desktop application is qualified on
-**macOS Apple Silicon only**. The portable Python engine is exercised by CI on
-Linux and Windows, but packaged desktop applications for those platforms are
-not claimed as supported.
+**Current release: [v1.1.0](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v1.1.0).**
+This is a stable source release for personal use, published without a signed or
+notarized installer. The native desktop application is qualified on **macOS
+Apple Silicon only**; Linux and Windows packaged builds are neither produced nor
+claimed.
 
-"Stable" here means the archival core is dependable and the storage formats are
-frozen for this series. It does not mean feature-complete: MBOX export,
-incremental synchronization, richer research tooling and deeper local
-intelligence are planned, not present. The
-[roadmap](docs/ROADMAP.md) and
-[implementation status](docs/engineering/IMPLEMENTATION_STATUS.md) state what
-exists.
+This release adds incremental IMAP synchronization with per-folder coverage,
+run checkpoints, OAuth2 for providers that refuse passwords, provider presets,
+MBOX import and export, and verified migration snapshots. It does not add OCR,
+streaming AI output, semantic retrieval, entity graphs, dossiers or installers.
+See the [implementation status](docs/engineering/IMPLEMENTATION_STATUS.md) for
+what exists and the [roadmap](docs/ROADMAP.md) for what does not.
 
 ## Getting the source
 
 The default branch `main` carries the released implementation, and the
-`v1.0.0` tag identifies it:
+`v1.1.0` tag identifies it:
 
 ```sh
 git clone https://github.com/James-HoneyBadger/HB_Continuum.git
